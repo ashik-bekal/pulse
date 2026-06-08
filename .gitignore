@@ -1,0 +1,37 @@
+# ── Real financial data — NEVER commit ───────────────────────────────────────
+# The SQLite ledger contains actual bank transactions, account numbers, and
+# personal details. Keep every database artifact out of history permanently.
+*.db
+*.db-shm
+*.db-wal
+*.db.bak*
+*.bak
+data/
+ledger.db*
+
+# Bank statement PDFs (inputs and fixtures alike)
+*.pdf
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ── OS / editor noise ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+
+# App-generated temp files
+uploads/
+tmp/
