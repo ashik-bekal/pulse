@@ -1,12 +1,16 @@
 """
-CLI for ingesting bank statements into the ledger.
+CLI for ingesting bank/card statements into the ledger.
 
-Thin entry point: does PDF text extraction (the one I/O concern unique to
-"ingesting a file from disk") and calls into parsers/ and services/ for
-everything else.
+This is now a THIN entry point: it does PDF text extraction (the one I/O
+concern unique to "ingesting a file from disk") and calls into parsers/ and
+services/ for everything else. Compare to the original scripts/
+ingest_statement.py, where parsing, categorization, persistence, and
+reconciliation reporting were all written inline per account type.
 
 Usage:
     python3 cli/ingest.py hsbc /path/to/statement.pdf
+    python3 cli/ingest.py chase_bank /path/to/statement.pdf --year 2026 --start-month 4
+    python3 cli/ingest.py sapphire /path/to/statement.pdf --year 2026 --start-month 4
 """
 import argparse
 import os
@@ -21,11 +25,14 @@ from persistence.repositories import (
     AccountRepository, CategoryRepository, VendorRuleRepository, TransactionRepository,
     ReviewQueueRepository, ExchangeRateRepository, SnapshotRepository,
 )
-from parsers import hsbc
-from services.ingestion import ingest_transactions
+from parsers import hsbc, chase_bank, chase_sapphire
+from services.ingestion import ingest_transactions, flag_fx_sanity_failures
 from services.reconciliation import record_snapshot, format_report
 
 ACCOUNT_UK_CURRENT = "UK_CURRENT"
+ACCOUNT_US_CHECKING = "US_CHECKING"
+ACCOUNT_US_SAVINGS = "US_SAVINGS"
+ACCOUNT_US_CREDIT_CARD = "US_CREDIT_CARD"
 
 
 def _extract_text(pdf_path: str) -> str:
@@ -69,15 +76,107 @@ def ingest_hsbc(conn, pdf_path: str, target_account_id: int = None):
     return inserted_ids, skipped, result.is_clean, result.diff
 
 
+def ingest_chase_bank(conn, pdf_path: str, year: int, start_month: int, target_account_id: int = None):
+    text = _extract_text(pdf_path)
+    accounts = chase_bank.parse_per_account(text, statement_year=year, statement_start_month=start_month)
+
+    # A Chase Checking/Savings PDF can contain a "Chase Total Checking"
+    # section, a "Chase Savings" section, or both — but the labels
+    # themselves don't say WHOSE account this is, only which product type.
+    # When a target account is given (because more than one account shares
+    # this format, e.g. two people's separate Chase Checking logins), route
+    # only the section matching that account's own type to it; any other
+    # section in the same PDF still resolves via the default hardcoded
+    # account for that type.
+    target_account_type = None
+    if target_account_id:
+        row = conn.execute("SELECT account_type FROM accounts WHERE id=?", (target_account_id,)).fetchone()
+        target_account_type = row["account_type"] if row else None
+
+    print(f"\n=== Chase Checking/Savings: {os.path.basename(pdf_path)} ===")
+    account_repo = AccountRepository(conn)
+    all_inserted = []
+    total_skipped = 0
+    all_reconciled = True
+    max_diff = 0.0
+    for label, acct_data in accounts.items():
+        label_account_type = "checking" if "Checking" in label else "savings"
+        if target_account_id and label_account_type == target_account_type:
+            account_id = target_account_id
+        else:
+            account_code = ACCOUNT_US_CHECKING if "Checking" in label else ACCOUNT_US_SAVINGS
+            account_id = account_repo.get_id_by_code(account_code)
+
+        result = chase_bank.reconcile(
+            acct_data["transactions"], beginning_balance=acct_data["beginning_balance"],
+            ending_balance=acct_data["ending_balance"],
+        )
+        inserted_ids, skipped = ingest_transactions(
+            acct_data["transactions"], account_id, os.path.basename(pdf_path),
+            TransactionRepository(conn), VendorRuleRepository(conn),
+            CategoryRepository(conn), ReviewQueueRepository(conn), ExchangeRateRepository(conn),
+        )
+        all_inserted.extend(inserted_ids)
+        total_skipped += skipped
+        all_reconciled = all_reconciled and result.is_clean
+        max_diff = max(max_diff, abs(result.diff or 0.0))
+
+        print(f"\n  -- {label} --")
+        print(f"  Begin: {acct_data['beginning_balance']}  End: {acct_data['ending_balance']}")
+        print(f"  Transactions: {len(acct_data['transactions'])}  Inserted: {len(inserted_ids)}  Skipped (duplicates): {skipped}")
+        print("  " + format_report(label, result).replace("\n", "\n  "))
+
+        year_month = acct_data["transactions"][-1].date[:7] if acct_data["transactions"] else f"{year:04d}-{start_month:02d}"
+        record_snapshot(SnapshotRepository(conn), account_id, year_month, result)
+    return all_inserted, total_skipped, all_reconciled, (max_diff if not all_reconciled else 0.0)
+
+
+def ingest_sapphire(conn, pdf_path: str, year: int, start_month: int, target_account_id: int = None):
+    text = _extract_text(pdf_path)
+    transactions = chase_sapphire.parse(text, statement_year=year, statement_start_month=start_month)
+    previous_balance, new_balance = chase_sapphire.extract_balances(text)
+    result = chase_sapphire.reconcile(transactions, previous_balance=previous_balance, new_balance=new_balance)
+    failures = chase_sapphire.fx_sanity_failures(transactions)
+
+    account_id = target_account_id or AccountRepository(conn).get_id_by_code(ACCOUNT_US_CREDIT_CARD)
+    review_repo = ReviewQueueRepository(conn)
+    inserted_ids, skipped = ingest_transactions(
+        transactions, account_id, os.path.basename(pdf_path),
+        TransactionRepository(conn), VendorRuleRepository(conn),
+        CategoryRepository(conn), review_repo, ExchangeRateRepository(conn),
+        is_credit_card=True,
+    )
+    flag_fx_sanity_failures(transactions, inserted_ids, failures, review_repo)
+
+    print(f"\n=== Chase Sapphire Reserve: {os.path.basename(pdf_path)} ===")
+    print(f"Previous balance: {previous_balance}  New balance: {new_balance}")
+    print(f"Transactions parsed: {len(transactions)}  Inserted: {len(inserted_ids)}  Skipped (duplicates): {skipped}")
+    if failures:
+        print(f"  *** {len(failures)} FX SANITY CHECK FAILURES - REVIEW BEFORE TRUSTING ***")
+        for f in failures:
+            print(f"    {f}")
+    print(format_report("Chase Sapphire Reserve", result))
+
+    year_month = transactions[-1].date[:7] if transactions else f"{year:04d}-{start_month:02d}"
+    record_snapshot(SnapshotRepository(conn), account_id, year_month, result)
+    return inserted_ids, skipped, result.is_clean, result.diff
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("account_type", choices=["hsbc"])
+    parser.add_argument("account_type", choices=["hsbc", "chase_bank", "sapphire"])
     parser.add_argument("pdf_path")
+    parser.add_argument("--year", type=int, default=None)
+    parser.add_argument("--start-month", type=int, default=None)
     args = parser.parse_args()
 
     conn = get_connection()
     if args.account_type == "hsbc":
         ingest_hsbc(conn, args.pdf_path)
+    elif args.account_type == "chase_bank":
+        ingest_chase_bank(conn, args.pdf_path, args.year, args.start_month)
+    elif args.account_type == "sapphire":
+        ingest_sapphire(conn, args.pdf_path, args.year, args.start_month)
 
     conn.commit()
     conn.close()
