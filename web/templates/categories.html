@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Categories — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cat-wrap { padding: 20px 24px; max-width: 900px; margin: 0 auto; }
+
+  .cat-page-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .cat-page-title { display: flex; align-items: baseline; gap: 12px; }
+  .cat-page-title h1 { font-family: 'Spectral', serif; font-size: 22px; font-weight: 600; color: var(--c-text); }
+  .cat-count { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); }
+
+  /* Add form */
+  .cat-add-form {
+    background: var(--c-card); border: 1px solid var(--c-accent-bd);
+    border-radius: 3px; padding: 16px 18px; margin-bottom: 14px; display: none;
+  }
+  .cat-add-form.open { display: block; }
+  .cat-add-title { font-family: 'Spectral', serif; font-size: 14px; margin-bottom: 14px; color: var(--c-text); }
+  .cat-form-grid { display: grid; grid-template-columns: 1fr 180px 110px; gap: 8px; align-items: end; }
+  .cat-field { display: flex; flex-direction: column; gap: 4px; }
+  .cat-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: var(--c-faint); }
+  .cat-input, .cat-select {
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text); border-radius: 2px; padding: 7px 9px; font-size: 12px;
+  }
+  .cat-form-actions { display: flex; gap: 6px; padding-top: 14px; }
+  .btn-add  { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500; background:var(--c-accent-bg); color:var(--c-accent); border:1px solid var(--c-accent-bd); border-radius:3px; padding:6px 12px; cursor:pointer; }
+  .btn-save { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500; background:var(--c-accent); color:#080a10; border:none; border-radius:3px; padding:6px 12px; cursor:pointer; }
+  .btn-cancel { font-family:'IBM Plex Mono',monospace; font-size:11px; background:transparent; color:var(--c-faint); border:1px solid var(--c-border); border-radius:3px; padding:6px 12px; cursor:pointer; }
+
+  /* Table */
+  .cat-table { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden; }
+  .cat-cols  { grid-template-columns: 1fr 140px 100px 60px 60px 80px; }
+  .cat-header { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border); background: var(--c-subtle); }
+  .cat-header span { font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--c-faint); }
+  .cat-row { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border2); align-items: center; }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-row:hover { background: var(--c-subtle); }
+  .cat-row.is-sub { background: rgba(255,255,255,.01); }
+
+  .cat-name { font-size: 13px; font-weight: 500; color: var(--c-text); }
+  .cat-name.sub { font-size: 12px; color: var(--c-text2); padding-left: 16px; }
+  .cat-name.sub::before { content: '└ '; color: var(--c-faint); }
+
+  .mtype-pill {
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; padding:2px 7px; border-radius:2px;
+  }
+  .mtype-pill.expense       { background:var(--c-red-bg);   color:var(--c-red-t);   border:1px solid var(--c-red-bd); }
+  .mtype-pill.income        { background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); }
+  .mtype-pill.transfer      { background:var(--c-subtle);   color:var(--c-muted);   border:1px solid var(--c-border); }
+  .mtype-pill.reimbursement { background:var(--c-accent-bg);color:var(--c-accent);  border:1px solid var(--c-accent-bd); }
+  .mtype-pill.loan_repayment{ background:var(--c-amber-bg); color:var(--c-amber-t); border:1px solid var(--c-amber-bd); }
+
+  .cat-txn-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); text-align:right; }
+  .cat-rule-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); text-align:right; }
+
+  .del-btn { font-family:'IBM Plex Mono',monospace; font-size:10px; background:var(--c-red-bg); color:var(--c-red-t); border:1px solid var(--c-red-bd); border-radius:2px; padding:3px 8px; cursor:pointer; }
+  .del-btn:hover { opacity:.8; }
+  .del-btn:disabled { opacity:.35; cursor:default; }
+  .cat-empty { padding:48px 24px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cat-wrap">
+
+  <div class="cat-page-header">
+    <div class="cat-page-title">
+      <h1>Categories</h1>
+      <span class="cat-count">{{ categories|length }} total</span>
+    </div>
+    <button class="btn-add" onclick="toggleCatForm()">+ Add category</button>
+  </div>
+
+  <!-- Add form -->
+  <div class="cat-add-form" id="cat-add-form">
+    <div class="cat-add-title">New category</div>
+    <form method="post" action="{{ url_for('add_category') }}">
+      <div class="cat-form-grid">
+        <div class="cat-field">
+          <label class="cat-label" for="f-name">Name</label>
+          <input id="f-name" name="name" class="cat-input" placeholder="e.g. Dining Out" required autofocus>
+        </div>
+        <div class="cat-field">
+          <label class="cat-label" for="f-parent">Parent category (optional)</label>
+          <select id="f-parent" name="parent_id" class="cat-select">
+            <option value="">— top level —</option>
+            {% for c in all_categories %}
+            {% if c.parent_id is none %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="cat-field">
+          <label class="cat-label" for="f-mtype">Money type</label>
+          <select id="f-mtype" name="money_type" class="cat-select">
+            <option value="expense">expense</option>
+            <option value="income">income</option>
+            <option value="transfer">transfer</option>
+            <option value="reimbursement">reimbursement</option>
+            <option value="loan_repayment">loan repayment</option>
+          </select>
+        </div>
+      </div>
+      <div class="cat-form-actions">
+        <button type="submit" class="btn-save">Save</button>
+        <button type="button" class="btn-cancel" onclick="toggleCatForm()">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Categories table -->
+  <div class="cat-table">
+    <div class="cat-header cat-cols">
+      <span>Name</span>
+      <span>Parent</span>
+      <span>Type</span>
+      <span style="text-align:right">Txns</span>
+      <span style="text-align:right">Rules</span>
+      <span style="text-align:right">Action</span>
+    </div>
+
+    {% if categories %}
+      {% for c in categories %}
+      <div class="cat-row cat-cols {% if c.parent_id %}is-sub{% endif %}">
+
+        <span class="cat-name {% if c.parent_id %}sub{% endif %}">{{ c.name }}</span>
+
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">
+          {{ c.parent_name or '—' }}
+        </span>
+
+        <span><span class="mtype-pill {{ c.money_type }}">{{ c.money_type | replace('_',' ') }}</span></span>
+
+        <span class="cat-txn-count">{{ c.txn_count }}</span>
+        <span class="cat-rule-count">{{ c.rule_count }}</span>
+
+        <div style="text-align:right">
+          <form method="post" action="{{ url_for('delete_category', cat_id=c.id) }}"
+                onsubmit="return confirmDel('{{ c.name }}', {{ c.txn_count }})">
+            <button type="submit" class="del-btn" {% if c.txn_count > 0 %}disabled title="{{ c.txn_count }} txns — reassign them first"{% endif %}>
+              ✕ Del
+            </button>
+          </form>
+        </div>
+
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="cat-empty">No categories yet.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function toggleCatForm() {
+    const form = document.getElementById('cat-add-form');
+    const open = form.classList.toggle('open');
+    if (open) setTimeout(() => document.getElementById('f-name').focus(), 50);
+  }
+
+  function confirmDel(name, txnCount) {
+    if (txnCount > 0) return false;
+    return confirm(`Delete category "${name}"? Vendor rules using it will also be removed.`);
+  }
+</script>
+{% endblock %}

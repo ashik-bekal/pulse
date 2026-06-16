@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}Review Queue — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .rq-wrap { padding: 20px 24px; max-width: 1500px; margin: 0 auto; }
+
+  .rq-page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .rq-page-title  { display:flex; align-items:baseline; gap:14px; }
+  .rq-page-title h1 { font-family:'Spectral',serif; font-size:22px; font-weight:600; color:var(--c-text); }
+  .rq-item-count  { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--c-amber); }
+  .rq-summary-badges { display:flex; gap:8px; font-family:'IBM Plex Mono',monospace; font-size:11px; }
+  .rq-summary-badge { padding:5px 10px; border-radius:3px; }
+  .rq-summary-badge.low   { background:var(--c-red-bg);   border:1px solid var(--c-red-bd);   color:var(--c-red-t);   }
+  .rq-summary-badge.med   { background:var(--c-amber-bg); border:1px solid var(--c-amber-bd); color:var(--c-amber-t); }
+
+  /* Filter bar */
+  .rq-filters { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .rq-search {
+    flex:1; min-width:180px; background:var(--c-card); border:1px solid var(--c-border);
+    color:var(--c-text); border-radius:3px; padding:6px 10px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+  }
+  .rq-date-input {
+    background:var(--c-card); border:1px solid var(--c-border);
+    color:var(--c-text); border-radius:3px; padding:6px 10px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; width:130px;
+  }
+  .rq-filter-count { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); margin-left:auto; }
+
+  /* Table */
+  .rq-table { background:var(--c-card); border:1px solid var(--c-border); border-radius:3px; overflow:hidden; }
+  .rq-cols  { grid-template-columns: 28px 82px 74px 1fr 78px 140px 150px 100px 90px; }
+  .rq-header { display:grid; padding:9px 14px; border-bottom:1px solid var(--c-border); background:var(--c-subtle); }
+  .rq-row {
+    display:grid; padding:10px 14px;
+    border-bottom:1px solid var(--c-border2); align-items:center;
+    border-left:3px solid transparent; transition:opacity .2s;
+  }
+  .rq-row.severity-low    { border-left-color:var(--c-red);   }
+  .rq-row.severity-medium { border-left-color:var(--c-amber); }
+  .rq-row.resolving       { opacity:.4; pointer-events:none; }
+  .rq-row.filtered-out   { display:none; }
+  .rq-row.bulk-selected  { background:var(--c-accent-bg); }
+
+  .rq-date { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); }
+  .rq-desc { font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; color:var(--c-text); }
+  .rq-amt       { font-family:'IBM Plex Mono',monospace; font-size:12.5px; text-align:right; font-variant-numeric:tabular-nums; }
+  .rq-amt.debit { color:var(--c-red-t); }
+  .rq-amt.credit{ color:var(--c-green-t); }
+  .dr-cr { font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; padding:1px 4px; border-radius:2px; margin-right:3px; vertical-align:middle; }
+  .dr-cr.dr { background:var(--c-red-bg); color:var(--c-red-t); border:1px solid var(--c-red-bd); }
+  .dr-cr.cr { background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); }
+
+  .rq-cat-select { font-size:10.5px; width:100%; background:var(--c-subtle); border:1px solid var(--c-border); color:var(--c-text); border-radius:2px; padding:5px 8px; }
+  .mtype-btns { display:flex; gap:3px; }
+  .mtype-btn  { flex:1; font-family:'IBM Plex Mono',monospace; font-size:9.5px; padding:5px 0; border-radius:2px; cursor:pointer; border:1px solid; transition:opacity .15s; }
+  .mtype-btn.exp      { background:var(--c-red-bg);    color:var(--c-red-t);    border-color:var(--c-red-bd);    }
+  .mtype-btn.inc      { background:var(--c-green-bg);  color:var(--c-green-t);  border-color:var(--c-green-bd);  }
+  .mtype-btn.reimb    { background:var(--c-accent-bg); color:var(--c-accent);   border-color:var(--c-accent-bd); }
+  .mtype-btn.trf      { background:var(--c-subtle);    color:var(--c-muted);    border-color:var(--c-border);    }
+  .mtype-btn.selected { opacity:1; filter:brightness(1.3); outline:2px solid var(--c-accent); outline-offset:1px; }
+  .mtype-btn:not(.selected) { opacity:.55; }
+
+  .resolve-btn { font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; color:var(--c-green-t); background:var(--c-green-bg); border:1px solid var(--c-green-bd); border-radius:2px; padding:5px 10px; cursor:pointer; white-space:nowrap; }
+  .rq-empty { padding:48px 24px; text-align:center; }
+  .rq-empty-check { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--c-green-t); margin-bottom:8px; }
+  .rq-empty-sub   { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); }
+
+  /* Row checkbox */
+  .row-cb { width:14px; height:14px; cursor:pointer; accent-color:var(--c-accent); }
+
+  /* Bulk action bar */
+  .bulk-bar {
+    display:none; position:sticky; bottom:0; z-index:200;
+    background:var(--c-card); border:1px solid var(--c-accent-bd);
+    border-radius:4px; margin-top:10px; padding:10px 16px;
+    align-items:center; gap:10px; flex-wrap:wrap;
+    box-shadow:0 -4px 16px rgba(0,0,0,.3);
+  }
+  .bulk-bar.visible { display:flex; }
+  .bulk-bar-label { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-accent); font-weight:600; white-space:nowrap; }
+  .bulk-cat-sel   { flex:1; min-width:160px; background:var(--c-subtle); border:1px solid var(--c-border); color:var(--c-text); border-radius:2px; padding:6px 8px; font-family:'IBM Plex Mono',monospace; font-size:11px; }
+  .bulk-mtype     { display:flex; gap:4px; }
+  .bulk-mtype-btn { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:5px 10px; border-radius:2px; cursor:pointer; border:1px solid; opacity:.6; }
+  .bulk-mtype-btn.exp   { background:var(--c-red-bg);    color:var(--c-red-t);    border-color:var(--c-red-bd);    }
+  .bulk-mtype-btn.inc   { background:var(--c-green-bg);  color:var(--c-green-t);  border-color:var(--c-green-bd);  }
+  .bulk-mtype-btn.reimb { background:var(--c-accent-bg); color:var(--c-accent);   border-color:var(--c-accent-bd); }
+  .bulk-mtype-btn.trf   { background:var(--c-subtle);    color:var(--c-muted);    border-color:var(--c-border);    }
+  .bulk-mtype-btn.selected { opacity:1; outline:2px solid var(--c-accent); outline-offset:1px; }
+  .bulk-resolve-btn { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); border-radius:3px; padding:7px 16px; cursor:pointer; white-space:nowrap; }
+  .bulk-cancel-btn  { font-family:'IBM Plex Mono',monospace; font-size:11px; background:transparent; border:1px solid var(--c-border); color:var(--c-muted); border-radius:3px; padding:7px 12px; cursor:pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rq-wrap">
+
+  <!-- Page header -->
+  <div class="rq-page-header">
+    <div class="rq-page-title">
+      <h1>Review queue</h1>
+      <span class="rq-item-count" id="rq-count-label">{{ items|length }} items to clear</span>
+    </div>
+    <div class="rq-summary-badges">
+      <span class="rq-summary-badge low">{{ review_low }} low conf.</span>
+      <span class="rq-summary-badge med">{{ review_med }} medium conf.</span>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="rq-filters">
+    <input class="rq-search" id="rq-search" type="search" placeholder="Filter by description…" oninput="applyFilters()">
+    <input class="rq-date-input" id="rq-date-from" type="date" title="From date" oninput="applyFilters()">
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">→</span>
+    <input class="rq-date-input" id="rq-date-to" type="date" title="To date" oninput="applyFilters()">
+    <span class="rq-filter-count" id="rq-visible-count"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="rq-table" id="rq-table">
+    <div class="rq-header rq-cols">
+      <span><input type="checkbox" id="select-all-cb" class="row-cb" onchange="toggleSelectAll(this)"></span>
+      <span>Date</span>
+      <span>Account</span>
+      <span>Description</span>
+      <span>Conf.</span>
+      <span>Category</span>
+      <span>Money type</span>
+      <span style="text-align:right">Amount</span>
+      <span style="text-align:right">Action</span>
+    </div>
+
+    {% if items %}
+      {% for item in items %}
+      <div class="rq-row rq-cols severity-{{ item.severity }}"
+           id="rq-row-{{ item.transaction_id }}"
+           data-txn-id="{{ item.transaction_id }}"
+           data-severity="{{ item.severity }}"
+           data-desc="{{ item.description | lower }}"
+           data-date="{{ item.transaction_date }}">
+
+        <span><input type="checkbox" class="row-cb bulk-cb" data-id="{{ item.transaction_id }}" onchange="onRowCheck()"></span>
+        <span class="rq-date">{{ item.transaction_date }}</span>
+        <span><span class="acct-chip">{{ item.account_name.split(' ')[-1][:8] }}</span></span>
+        <span class="rq-desc" title="{{ item.description }}">{{ item.description }}</span>
+
+        <span>
+          {% if item.severity == 'high' %}<span class="conf-high-full">high</span>
+          {% elif item.severity == 'medium' %}<span class="conf-medium">med</span>
+          {% else %}<span class="conf-low">low</span>{% endif %}
+        </span>
+
+        <select class="rq-cat-select" id="cat-{{ item.transaction_id }}">
+          <option value="">— select —</option>
+          {% for c in categories %}
+          <option value="{{ c.id }}" {% if item.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+
+        <div class="mtype-btns" id="mtype-{{ item.transaction_id }}">
+          <button class="mtype-btn exp {% if item.money_type == 'expense' %}selected{% endif %}" onclick="setMtype({{ item.transaction_id }}, 'expense', this)">Exp</button>
+          <button class="mtype-btn inc {% if item.money_type == 'income' %}selected{% endif %}"  onclick="setMtype({{ item.transaction_id }}, 'income', this)">Inc</button>
+          <button class="mtype-btn reimb {% if item.money_type == 'reimbursement' %}selected{% endif %}" onclick="setMtype({{ item.transaction_id }}, 'reimbursement', this)">Reimb</button>
+          <button class="mtype-btn trf {% if item.money_type == 'transfer' %}selected{% endif %}" onclick="setMtype({{ item.transaction_id }}, 'transfer', this)">Trf</button>
+        </div>
+
+        {% set is_debit = item.settlement_amount < 0 %}
+        <span class="rq-amt {{ 'debit' if is_debit else 'credit' }}">
+          <span class="dr-cr {{ 'dr' if is_debit else 'cr' }}">{{ 'DR' if is_debit else 'CR' }}</span>{{ item.settlement_currency|ccy }}{{ item.settlement_amount|fmt }}
+        </span>
+
+        <div style="text-align:right">
+          <button class="resolve-btn" onclick="resolveItem({{ item.transaction_id }}, this)">✓ Resolve</button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="rq-empty" id="rq-empty">
+        <div class="rq-empty-check">✓ All items resolved</div>
+        <div class="rq-empty-sub">New items will appear here after the next import</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Bulk action bar -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-bar-label" id="bulk-label">0 selected</span>
+    <select class="bulk-cat-sel" id="bulk-cat">
+      <option value="">— keep existing category —</option>
+      {% for c in categories %}
+      <option value="{{ c.id }}">{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="bulk-mtype" title="Optional — leave none selected to keep each row's own money type unchanged">
+      <button class="bulk-mtype-btn exp" onclick="setBulkMtype('expense',this)">Exp</button>
+      <button class="bulk-mtype-btn inc" onclick="setBulkMtype('income',this)">Inc</button>
+      <button class="bulk-mtype-btn reimb" onclick="setBulkMtype('reimbursement',this)">Reimb</button>
+      <button class="bulk-mtype-btn trf" onclick="setBulkMtype('transfer',this)">Trf</button>
+    </div>
+    <button class="bulk-resolve-btn" onclick="bulkResolve()">✓ Resolve selected</button>
+    <button class="bulk-cancel-btn"  onclick="clearSelection()">✕ Cancel</button>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // ── Mtype state ───────────────────────────────────────────────────────────
+  const mtypeState = {};
+  function setMtype(txnId, mtype, btn) {
+    mtypeState[txnId] = mtype;
+    btn.closest('.mtype-btns').querySelectorAll('.mtype-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  }
+  document.querySelectorAll('.mtype-btn.selected').forEach(btn => {
+    const group = btn.closest('.mtype-btns');
+    if (!group) return;
+    const txnId = group.id.replace('mtype-', '');
+    mtypeState[txnId] = btn.classList.contains('exp')   ? 'expense'
+                      : btn.classList.contains('inc')   ? 'income'
+                      : btn.classList.contains('reimb') ? 'reimbursement'
+                      : 'transfer';
+  });
+
+  // ── Single resolve ────────────────────────────────────────────────────────
+  let remainingCount = {{ items|length }};
+  function resolveItem(txnId, btn) {
+    const row   = document.getElementById('rq-row-' + txnId);
+    const catId = document.getElementById('cat-' + txnId).value;
+    const mtype = mtypeState[txnId] || row.querySelector('.mtype-btn.selected')?.classList.contains('exp') ? 'expense' : 'income';
+
+    row.classList.add('resolving');
+    btn.textContent = '…';
+    fetch(`/api/review/${txnId}/resolve`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category_id: catId || null, money_type: mtypeState[txnId] || 'expense'}),
+    }).then(r => r.json()).then(data => {
+      row.remove();
+      updateCounts(data.remaining);
+      applyFilters();
+    }).catch(() => { row.classList.remove('resolving'); btn.textContent = '✓ Resolve'; });
+  }
+
+  function updateCounts(remaining) {
+    remainingCount = remaining;
+    const label = document.getElementById('rq-count-label');
+    if (label) label.textContent = remaining + ' items to clear';
+    const badge = document.getElementById('nav-review-badge');
+    if (badge) { if (remaining > 0) badge.textContent = remaining; else badge.remove(); }
+    if (remaining === 0) {
+      const table = document.getElementById('rq-table');
+      const e = document.createElement('div'); e.className = 'rq-empty';
+      e.innerHTML = '<div class="rq-empty-check">✓ All items resolved</div><div class="rq-empty-sub">New items will appear here after the next import</div>';
+      table.appendChild(e);
+    }
+  }
+
+  // ── Client-side filter ────────────────────────────────────────────────────
+  function applyFilters() {
+    const q    = document.getElementById('rq-search').value.toLowerCase();
+    const from = document.getElementById('rq-date-from').value;
+    const to   = document.getElementById('rq-date-to').value;
+    let visible = 0;
+    document.querySelectorAll('.rq-row[data-txn-id]').forEach(row => {
+      const desc = row.dataset.desc || '';
+      const date = row.dataset.date || '';
+      const ok = (!q || desc.includes(q))
+              && (!from || date >= from)
+              && (!to   || date <= to);
+      row.classList.toggle('filtered-out', !ok);
+      if (ok) visible++;
+    });
+    const el = document.getElementById('rq-visible-count');
+    if (el) el.textContent = (q || from || to) ? `${visible} shown` : '';
+    document.getElementById('select-all-cb').checked = false;
+  }
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  let bulkMtype = null;
+
+  function toggleSelectAll(cb) {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      const row = c.closest('.rq-row');
+      if (!row.classList.contains('filtered-out')) { c.checked = cb.checked; row.classList.toggle('bulk-selected', cb.checked); }
+    });
+    syncBulkBar();
+  }
+
+  function onRowCheck() {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      c.closest('.rq-row').classList.toggle('bulk-selected', c.checked);
+    });
+    syncBulkBar();
+  }
+
+  function syncBulkBar() {
+    const selected = Array.from(document.querySelectorAll('.bulk-cb:checked'));
+    const bar = document.getElementById('bulk-bar');
+    bar.classList.toggle('visible', selected.length > 0);
+    document.getElementById('bulk-label').textContent = `${selected.length} selected`;
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.bulk-cb').forEach(c => { c.checked = false; c.closest('.rq-row').classList.remove('bulk-selected'); });
+    document.getElementById('select-all-cb').checked = false;
+    bulkMtype = null;
+    document.querySelectorAll('.bulk-mtype-btn').forEach(b => b.classList.remove('selected'));
+    syncBulkBar();
+  }
+
+  function setBulkMtype(mtype, btn) {
+    // Clicking an already-selected button deselects it, going back to
+    // "leave each row's own money type unchanged" — the buttons here are
+    // an optional override, not a required choice.
+    if (bulkMtype === mtype) {
+      bulkMtype = null;
+      btn.classList.remove('selected');
+      return;
+    }
+    bulkMtype = mtype;
+    document.querySelectorAll('.bulk-mtype-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  }
+
+  function bulkResolve() {
+    const ids     = Array.from(document.querySelectorAll('.bulk-cb:checked')).map(c => parseInt(c.dataset.id));
+    const catId   = document.getElementById('bulk-cat').value || null;
+    if (!ids.length) return;
+    if (!catId && !bulkMtype) { alert('Select a category or a money type to apply.'); return; }
+
+    fetch('/api/review/bulk-resolve', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({txn_ids: ids, category_id: catId, money_type: bulkMtype}),
+    }).then(r => r.json()).then(data => {
+      ids.forEach(id => { const row = document.getElementById('rq-row-' + id); if (row) row.remove(); });
+      updateCounts(data.remaining);
+      clearSelection();
+      applyFilters();
+    }).catch(console.error);
+  }
+</script>
+{% endblock %}

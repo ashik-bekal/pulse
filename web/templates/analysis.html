@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Analysis — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .an-wrap { padding: 24px 24px 40px; max-width: 1200px; margin: 0 auto; }
+
+  .an-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .an-title { font-family: 'Spectral', serif; font-size: 22px; font-weight: 600; }
+  .an-nav { display: flex; align-items: center; gap: 6px; }
+  .an-nav-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text2); border-radius: 3px; padding: 6px 12px;
+    cursor: pointer; text-decoration: none;
+  }
+  .an-nav-btn:hover { border-color: var(--c-accent); color: var(--c-accent); }
+  .an-nav-btn.disabled { opacity: .3; pointer-events: none; }
+  .an-range { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); padding: 0 6px; }
+
+  /* Category picker */
+  .an-picker-card { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; padding: 12px 16px; margin-bottom: 18px; }
+  .an-picker-title { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--c-faint); margin-bottom: 10px; }
+  .an-picker-list { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+  .an-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    padding: 4px 10px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--c-border); background: var(--c-subtle); color: var(--c-faint);
+    user-select: none;
+  }
+  .an-pill.on { color: var(--c-text); border-color: var(--c-border2); }
+  .an-pill-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .an-picker-actions { margin-left: auto; display: flex; gap: 8px; }
+  .an-picker-link { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-accent); cursor: pointer; background: none; border: none; padding: 0; }
+
+  /* Chart */
+  .an-chart-card { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; padding: 20px 20px 10px; margin-bottom: 18px; }
+  .an-chart { display: flex; align-items: flex-end; justify-content: space-around; height: 260px; gap: 18px; padding: 0 10px; }
+  .an-chart-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
+  .an-chart-total { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-text2); margin-bottom: 4px; }
+  .an-bar-stack { width: 56px; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .an-bar-seg { width: 100%; cursor: pointer; transition: opacity .12s; min-height: 2px; }
+  .an-bar-seg:hover { opacity: .75; outline: 1px solid rgba(255,255,255,.4); outline-offset: -1px; }
+  .an-bar-seg.dimmed { opacity: .3; }
+  .an-chart-month-label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-faint); margin-top: 8px; }
+  .an-chart-empty { text-align: center; padding: 60px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); }
+
+  /* Drill-down */
+  .an-drill-card { background: var(--c-card); border: 1px solid var(--c-accent-bd); border-radius: 3px; padding: 16px 20px; }
+  .an-drill-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .an-drill-title { font-family: 'Spectral', serif; font-size: 15px; color: var(--c-text); }
+  .an-drill-link { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-accent); text-decoration: none; }
+  .an-drill-table { width: 100%; }
+  .an-drill-row { display: grid; grid-template-columns: 90px 1fr 90px 120px; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--c-border2); font-size: 12px; align-items: center; }
+  .an-drill-row:last-child { border-bottom: none; }
+  .an-drill-date { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); }
+  .an-drill-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .an-drill-acct { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-muted); }
+  .an-drill-amt { font-family: 'IBM Plex Mono', monospace; font-size: 12px; text-align: right; color: var(--c-red-t); }
+  .an-drill-empty { text-align: center; padding: 20px 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="an-wrap">
+
+  <div class="an-header">
+    <span class="an-title">Spend by category</span>
+    <div class="an-nav">
+      <a class="an-nav-btn" href="?offset={{ offset + 1 }}&form_submitted=1&{{ cats_qs }}">‹ older</a>
+      <span class="an-range">{{ chart_months[0].abbr }} – {{ chart_months[-1].abbr }}</span>
+      <a class="an-nav-btn {% if offset == 0 %}disabled{% endif %}" href="?offset={{ [offset - 1, 0]|max }}&form_submitted=1&{{ cats_qs }}">newer ›</a>
+    </div>
+  </div>
+
+  <!-- Category picker -->
+  <div class="an-picker-card">
+    <div class="an-picker-title" style="display:flex">
+      Categories
+      <span class="an-picker-actions">
+        <button class="an-picker-link" onclick="selectAllCats(true)">All</button>
+        <button class="an-picker-link" onclick="selectAllCats(false)">None</button>
+      </span>
+    </div>
+    <form id="cat-form" method="get">
+      <input type="hidden" name="offset" value="{{ offset }}">
+      <input type="hidden" name="form_submitted" value="1">
+      <div class="an-picker-list">
+        {% for c in picker %}
+        <label class="an-pill {{ 'on' if c.selected }}">
+          <input type="checkbox" name="categories" value="{{ c.id }}" {% if c.selected %}checked{% endif %}
+                 style="display:none" onchange="this.closest('form').submit()">
+          <span class="an-pill-dot" style="background:{{ c.color }}"></span>
+          {{ c.name }}
+        </label>
+        {% endfor %}
+        {% if not picker %}
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-faint)">No categorised spend in this range.</span>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <!-- Stacked bar chart -->
+  <div class="an-chart-card">
+    {% if picker and has_active_selection %}
+    <div class="an-chart">
+      {% for m in chart_months %}
+      <div class="an-chart-col">
+        <span class="an-chart-total">£{{ m.total|round|int }}</span>
+        <div class="an-bar-stack" style="height:{{ m.total_height_pct }}%">
+          {% for seg in m.segments %}
+          <a class="an-bar-seg {% if drill_month and drill_category and (drill_month != m.ym or drill_category != seg.category_id|string) %}dimmed{% endif %}"
+             style="height:{{ (seg.spend / m.total * 100) if m.total else 0 }}%; background:{{ seg.color }}"
+             href="?offset={{ offset }}&form_submitted=1&{{ cats_qs }}&drill_month={{ m.ym }}&drill_category={{ seg.category_id }}#drill"
+             title="{{ seg.category_name }}: £{{ seg.spend|round(2) }}"></a>
+          {% endfor %}
+        </div>
+        <span class="an-chart-month-label">{{ m.abbr }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% elif not picker %}
+    <div class="an-chart-empty">No categorised expense transactions in this range.</div>
+    {% else %}
+    <div class="an-chart-empty">Select at least one category to see the chart.</div>
+    {% endif %}
+  </div>
+
+  <!-- Drill-down -->
+  {% if drill_month and drill_category %}
+  <div class="an-drill-card" id="drill">
+    <div class="an-drill-header">
+      <span class="an-drill-title">
+        {{ drill_rows[0].category_name if drill_rows else '' }} — {{ drill_month }}
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--c-faint)">({{ drill_rows|length }} transaction{{ 's' if drill_rows|length != 1 }})</span>
+      </span>
+      <a class="an-drill-link" href="{{ url_for('transactions', category_id=drill_category, year_month=drill_month) }}">Open in Transactions →</a>
+    </div>
+    <div class="an-drill-table">
+      {% if drill_rows %}
+        {% for t in drill_rows %}
+        <div class="an-drill-row txn-clickable" onclick="openTxnModal({{ t.id }})">
+          <span class="an-drill-date">{{ t.transaction_date }}</span>
+          <span class="an-drill-desc" title="{{ t.description }} — click to edit">{{ t.description }}</span>
+          <span class="an-drill-acct">{{ t.account_name.split(' ')[-1][:10] }}</span>
+          <span class="an-drill-amt">£{{ t.reporting_amount|abs|round(2) }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="an-drill-empty">No transactions found.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function selectAllCats(all) {
+    document.querySelectorAll('#cat-form input[type=checkbox]').forEach(cb => cb.checked = all);
+    document.getElementById('cat-form').submit();
+  }
+</script>
+{% endblock %}

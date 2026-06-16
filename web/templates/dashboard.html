@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .dash-wrap { padding: 20px 24px; max-width: 1500px; margin: 0 auto; }
+
+  /* Account cards */
+  .acct-cards { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
+  .acct-card {
+    background: var(--c-card);
+    border: 1px solid var(--c-border);
+    border-top: 2px solid var(--c-green);
+    border-radius: 3px; padding: 14px 16px;
+  }
+  .acct-card.gap {
+    background: var(--c-red-bg);
+    border-color: var(--c-red-bd);
+    border-top-color: var(--c-red);
+  }
+  .acct-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .acct-name { font-size: 13.5px; font-weight: 600; color: var(--c-text); }
+  .acct-type {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px; color: var(--c-faint);
+    text-transform: uppercase; letter-spacing: .05em; margin-top: 3px;
+  }
+  .acct-badge {
+    flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    padding: 2px 6px; border-radius: 2px; white-space: nowrap;
+  }
+  .acct-badge.ok  { color: var(--c-green-t); border: 1px solid var(--c-green-bd); background: var(--c-green-bg); }
+  .acct-badge.gap { color: var(--c-red-t);   border: 1px solid var(--c-red-bd);   background: var(--c-red-bg);   }
+  .acct-balance {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 26px; font-weight: 500;
+    letter-spacing: -.01em; margin-top: 14px;
+    font-variant-numeric: tabular-nums; color: var(--c-text);
+  }
+  .acct-card.gap .acct-balance { color: var(--c-red-t); }
+  .acct-as-of {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; color: var(--c-faint); margin-top: 4px;
+  }
+  .acct-card.gap .acct-as-of { color: var(--c-red-t); opacity: .8; }
+
+  /* Main 2-col grid */
+  .dash-grid { display: grid; grid-template-columns: 1.65fr 1fr; gap: 16px; }
+  .dash-left  { display: flex; flex-direction: column; gap: 16px; }
+  .dash-right { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Net worth card */
+  .nw-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--c-faint);
+  }
+  .nw-amount {
+    font-family: 'Spectral', serif;
+    font-size: 46px; font-weight: 600;
+    line-height: 1.05; margin-top: 8px; color: var(--c-text);
+  }
+  .nw-bar { display: flex; height: 6px; border-radius: 2px; overflow: hidden; background: var(--c-border); margin-top: 18px; }
+  .nw-bar-seg { height: 100%; }
+  .nw-bar-legend {
+    display: flex; justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; margin-top: 7px;
+  }
+
+  /* Income vs expense chart */
+  .chart-card { padding: 18px 20px 14px; }
+  .chart-title {
+    font-family: 'Spectral', serif; font-size: 15px; color: var(--c-text);
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+  }
+  .chart-legend { display: flex; gap: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-muted); }
+  .chart-legend-dot { width: 8px; height: 8px; border-radius: 1px; display: inline-block; }
+  .chart-body { display: flex; gap: 8px; height: 196px; }
+  .chart-yaxis {
+    display: flex; flex-direction: column; justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--c-faint);
+    text-align: right; padding-bottom: 20px; width: 26px; flex-shrink: 0;
+  }
+  .chart-area {
+    flex: 1; display: flex; align-items: flex-end; justify-content: space-around;
+    border-left: 1px solid var(--c-border2); border-bottom: 1px solid var(--c-border2);
+    position: relative; padding-bottom: 20px; overflow: hidden;
+  }
+  .chart-midline {
+    position: absolute; left: 0; right: 0; top: 50%;
+    border-top: 1px dashed var(--c-border); opacity: .6;
+  }
+  .chart-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .chart-bars { display: flex; gap: 3px; align-items: flex-end; height: 156px; }
+  .chart-bar-inc { width: 14px; background: var(--c-green); border-radius: 2px 2px 0 0; opacity: .85; }
+  .chart-bar-exp { width: 14px; background: var(--c-red);   border-radius: 2px 2px 0 0; opacity: .85; }
+  .chart-month-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; }
+
+  /* Statement coverage card */
+  .cov-header {
+    display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;
+  }
+  .cov-title { font-family: 'Spectral', serif; font-size: 15px; color: var(--c-text); }
+  .cov-import-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--c-accent); background: var(--c-accent-bg);
+    border: 1px solid var(--c-accent-bd); border-radius: 3px;
+    padding: 4px 9px; cursor: pointer;
+  }
+  .cov-legend {
+    display: flex; gap: 14px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--c-faint);
+    margin-bottom: 13px;
+  }
+  .cov-dot { width: 8px; height: 8px; border-radius: 1px; display: inline-block; }
+  .cov-rows { display: flex; flex-direction: column; gap: 11px; }
+  .cov-row  { display: flex; align-items: center; justify-content: space-between; }
+  .cov-acct { font-size: 12px; color: var(--c-text2); width: 114px; flex-shrink: 0; }
+  .cov-chips { display: flex; gap: 4px; }
+  .cov-chip {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+    padding: 3px 7px; border-radius: 2px; white-space: nowrap;
+  }
+  .cov-chip.loaded  { background: var(--c-green-bg); border: 1px solid var(--c-green-bd); color: var(--c-green-t); }
+  .cov-chip.partial { background: var(--c-amber-bg); border: 1px solid var(--c-amber-bd); color: var(--c-amber-t); }
+  .cov-chip.awaited { border: 1px dashed var(--c-border); color: var(--c-faint); }
+  .cov-nav { display:flex; align-items:center; gap:4px; }
+  .cov-nav-btn {
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+    background:var(--c-subtle); border:1px solid var(--c-border);
+    color:var(--c-text2); border-radius:2px; padding:2px 7px;
+    cursor:pointer; line-height:1; text-decoration:none;
+  }
+  .cov-nav-btn:hover { border-color:var(--c-accent); color:var(--c-accent); }
+  .cov-nav-btn.disabled { opacity:.3; pointer-events:none; }
+
+  /* Category spend chart */
+  .cat-chart-card { padding: 18px 20px; margin-top: 16px; }
+  .cat-chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .cat-chart-title { font-family:'Spectral',serif; font-size:15px; color:var(--c-text); }
+  .cat-month-sel {
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+    background:var(--c-subtle); border:1px solid var(--c-border);
+    color:var(--c-text); border-radius:2px; padding:4px 8px; cursor:pointer;
+  }
+  .cat-bar-row { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .cat-bar-label { font-size:12px; color:var(--c-text2); width:150px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cat-bar-track { flex:1; height:8px; background:var(--c-border); border-radius:2px; position:relative; overflow:hidden; }
+  .cat-bar-fill  { position:absolute; left:0; top:0; height:100%; border-radius:2px; background:var(--c-amber); opacity:.75; }
+  .cat-bar-val   { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-text2); width:64px; text-align:right; flex-shrink:0; }
+
+  /* Review callout card */
+  .rq-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .rq-title  { font-family: 'Spectral', serif; font-size: 15px; color: var(--c-text); }
+  .rq-sub    { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint); margin-top: 3px; }
+  .rq-count  {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 32px; font-weight: 500; color: var(--c-amber);
+    line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .rq-pending { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-faint); }
+  .rq-stats  { display: flex; gap: 6px; margin-top: 14px; }
+  .rq-stat   { flex: 1; border-radius: 2px; padding: 8px 10px; text-align: center; }
+  .rq-stat-n { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .rq-stat-l { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; margin-top: 2px; }
+  .rq-stat.low    { background: var(--c-red-bg);   border: 1px solid var(--c-red-bd);   }
+  .rq-stat.med    { background: var(--c-amber-bg); border: 1px solid var(--c-amber-bd); }
+  .rq-stat.cleared{ background: var(--c-green-bg); border: 1px solid var(--c-green-bd); }
+  .rq-stat.low  .rq-stat-n, .rq-stat.low  .rq-stat-l { color: var(--c-red-t);   }
+  .rq-stat.med  .rq-stat-n, .rq-stat.med  .rq-stat-l { color: var(--c-amber-t); }
+  .rq-stat.cleared .rq-stat-n, .rq-stat.cleared .rq-stat-l { color: var(--c-green-t); }
+  .rq-open-btn {
+    width: 100%; margin-top: 12px; padding: 8px;
+    font-size: 12px; font-weight: 500; color: var(--c-accent);
+    background: var(--c-accent-bg); border: 1px solid var(--c-accent-bd);
+    border-radius: 3px; cursor: pointer; text-align: center;
+    display: block; text-decoration: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dash-wrap">
+
+  <!-- row label -->
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+    <span style="font-family:'Spectral',serif;font-size:14px;color:var(--c-text2)">Accounts</span>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">Reporting currency: GBP</span>
+  </div>
+
+  <!-- 4 account cards -->
+  <div class="acct-cards">
+    {% for a in accounts %}
+    {% set has_gap = a.reconciled == false and a.recon_diff is not none %}
+    <div class="acct-card {% if has_gap %}gap{% endif %}">
+      <div class="acct-card-top">
+        <div>
+          <div class="acct-name">{{ a.display_name }}</div>
+          <div class="acct-type">{{ a.account_type | replace('_',' ') }} · {{ a.currency }}{% if a.owner_name %} · {{ a.owner_name }}{% endif %}</div>
+        </div>
+        {% if a.reconciled is none %}
+          <span class="acct-badge" style="color:var(--c-faint);border:1px solid var(--c-border)">No data</span>
+        {% elif a.reconciled %}
+          <span class="acct-badge ok">✓ Reconciled</span>
+        {% elif a.recon_diff is none %}
+          <span class="acct-badge" style="color:var(--c-amber-t);border:1px solid var(--c-amber-bd);background:var(--c-amber-bg)">Unverified</span>
+        {% else %}
+          {% set diff = a.recon_diff | float %}
+          <span class="acct-badge gap">Gap {{ '−' if diff < 0 else '+' }}{{ a.currency|ccy }}{{ diff|abs|fmt }}</span>
+        {% endif %}
+      </div>
+      {% if a.display_balance is not none %}
+        <div class="acct-balance">
+          {{ '-' if a.display_balance < 0 else '' }}{{ a.currency|ccy }}{{ a.display_balance|fmt }}
+        </div>
+        <div class="acct-as-of">
+          {% if a.gbp_equiv is not none %}≈ £{{ a.gbp_equiv|fmt }} · {% endif %}as of {{ a.year_month }}
+        </div>
+      {% else %}
+        <div class="acct-balance" style="color:var(--c-faint)">—</div>
+        <div class="acct-as-of">No statement loaded</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- main 2-col grid -->
+  <div class="dash-grid">
+    <div class="dash-left">
+
+      <!-- Net worth -->
+      <div class="card" style="padding:18px 20px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="nw-label">Net worth · reporting GBP</div>
+            <div class="nw-amount">£{{ "{:,.0f}".format(net_worth) }}</div>
+          </div>
+          <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint);line-height:2.1">
+            <div>{{ txn_count }} transactions total</div>
+          </div>
+        </div>
+        <!-- Contribution bar -->
+        {% set total_pos = namespace(v=0) %}
+        {% for a in accounts %}
+          {% if a.gbp_equiv is not none and a.gbp_equiv > 0 %}{% set total_pos.v = total_pos.v + a.gbp_equiv %}
+          {% elif a.currency == 'GBP' and a.display_balance is not none and a.display_balance > 0 %}{% set total_pos.v = total_pos.v + a.display_balance %}{% endif %}
+        {% endfor %}
+        <div class="nw-bar" style="margin-top:18px">
+          {% for a in accounts %}
+            {% set bal = (a.gbp_equiv if a.gbp_equiv is not none else (a.display_balance if a.currency=='GBP' else 0)) or 0 %}
+            {% if bal != 0 and total_pos.v > 0 %}
+              {% set w = (bal / total_pos.v * 100)|round|int %}
+              <div class="nw-bar-seg" style="width:{{ w }}%;background:{{ a.color }};{% if bal < 0 %}opacity:.5{% endif %}"></div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <div class="nw-bar-legend">
+          {% for a in accounts %}
+            {% set bal = (a.gbp_equiv if a.gbp_equiv is not none else (a.display_balance if a.currency=='GBP' else 0)) or 0 %}
+            <span style="color:{{ a.color }}">{{ a.display_name.split(' ')[-1] }}
+              {% if bal >= 0 %}£{{ "{:,.0f}".format(bal) }}{% else %}−£{{ "{:,.0f}".format(bal|abs) }}{% endif %}
+            </span>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Income vs Expense chart -->
+      <div class="card chart-card">
+        <div class="chart-title">
+          <span>Income vs. expense <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">· GBP · 6 months</span></span>
+          <div class="chart-legend">
+            <span style="display:flex;align-items:center;gap:5px"><span class="chart-legend-dot" style="background:var(--c-green)"></span>Income</span>
+            <span style="display:flex;align-items:center;gap:5px"><span class="chart-legend-dot" style="background:var(--c-red)"></span>Expense</span>
+          </div>
+        </div>
+        {% if chart_data %}
+        <div class="chart-body">
+          <div class="chart-yaxis"><span>£8k</span><span>£4k</span><span>£0</span></div>
+          <div class="chart-area">
+            <div class="chart-midline"></div>
+            {% for m in chart_data %}
+            <div class="chart-col">
+              <div class="chart-bars">
+                <div class="chart-bar-inc" style="height:{{ m.income_h }}px"></div>
+                <div class="chart-bar-exp" style="height:{{ m.expense_h }}px"></div>
+              </div>
+              <span class="chart-month-label" style="color:{{ m.label_color }}">{{ m.label }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% else %}
+        <div style="height:196px;display:flex;align-items:center;justify-content:center;color:var(--c-faint);font-family:'IBM Plex Mono',monospace;font-size:11px">
+          No transaction data yet
+        </div>
+        {% endif %}
+      </div>
+
+    </div><!-- /.dash-left -->
+
+    <div class="dash-right">
+
+      <!-- Statement coverage -->
+      <div class="card" style="padding:18px 20px">
+        <div class="cov-header">
+          <div class="cov-title">Statement coverage</div>
+          <button class="cov-import-btn">↧ Import</button>
+        </div>
+        <div class="cov-legend" style="margin-bottom:10px">
+          <span style="display:flex;align-items:center;gap:4px"><span class="cov-dot" style="background:var(--c-green)"></span>Loaded</span>
+          <span style="display:flex;align-items:center;gap:4px"><span class="cov-dot" style="background:var(--c-amber)"></span>Partial</span>
+          <span style="display:flex;align-items:center;gap:4px"><span class="cov-dot" style="border:1px solid var(--c-border)"></span>Awaited</span>
+          <span style="margin-left:auto" class="cov-nav">
+            <a class="cov-nav-btn" href="?cov_offset={{ cov_offset + 5 }}">‹ older</a>
+            <a class="cov-nav-btn {% if cov_offset == 0 %}disabled{% endif %}" href="?cov_offset={{ [cov_offset - 5, 0]|max }}">newer ›</a>
+          </span>
+        </div>
+        <div class="cov-rows">
+          {% for a in accounts %}
+          <div class="cov-row">
+            <span class="cov-acct">{{ a.display_name }}</span>
+            <div class="cov-chips">
+              {% for m in a.months %}
+              <span class="cov-chip {{ m.status }}" title="{{ m.ym }}">{{ m.abbr }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Review queue callout -->
+      <div class="card" style="padding:18px 20px">
+        <div class="rq-header">
+          <div>
+            <div class="rq-title">Review queue</div>
+            <div class="rq-sub">auto-categorised · needs review</div>
+          </div>
+          <div style="text-align:right">
+            <div class="rq-count">{{ review_count }}</div>
+            <div class="rq-pending">pending</div>
+          </div>
+        </div>
+        <div class="rq-stats">
+          <div class="rq-stat low">
+            <div class="rq-stat-n">{{ review_low }}</div>
+            <div class="rq-stat-l">low conf.</div>
+          </div>
+          <div class="rq-stat med">
+            <div class="rq-stat-n">{{ review_med }}</div>
+            <div class="rq-stat-l">med conf.</div>
+          </div>
+          <div class="rq-stat cleared">
+            <div class="rq-stat-n">—</div>
+            <div class="rq-stat-l">cleared</div>
+          </div>
+        </div>
+        <a href="{{ url_for('review_queue_view') }}" class="rq-open-btn">Open review queue →</a>
+      </div>
+
+    </div><!-- /.dash-right -->
+  </div><!-- /.dash-grid -->
+
+  <!-- Category spend chart (full width) -->
+  <div class="card cat-chart-card">
+    <div class="cat-chart-header">
+      <div class="cat-chart-title">
+        Spend by category
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)"> · GBP · expenses only</span>
+      </div>
+      <form method="get" style="margin:0">
+        <select class="cat-month-sel" name="month" onchange="this.form.submit()">
+          {% for ym in avail_months %}
+          <option value="{{ ym }}" {% if ym == selected_month %}selected{% endif %}>{{ ym }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    {% if cat_spend %}
+      {% for row in cat_spend %}
+      <div class="cat-bar-row">
+        <span class="cat-bar-label" title="{{ row.category_name }}">{{ row.category_name }}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill" style="width:{{ row.bar_w }}%"></div>
+        </div>
+        <span class="cat-bar-val">£{{ "{:,.0f}".format(row.spend or 0) }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="padding:24px 0;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-faint)">
+        No categorised expenses for {{ selected_month or 'this month' }}.
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

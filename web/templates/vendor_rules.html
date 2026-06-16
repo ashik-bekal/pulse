@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+{% block title %}Vendor Rules — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .vr-wrap { padding: 20px 24px; max-width: 1160px; margin: 0 auto; }
+
+  /* Page header */
+  .vr-page-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .vr-page-title {
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  .vr-page-title h1 {
+    font-family: 'Spectral', serif; font-size: 22px; font-weight: 600; color: var(--c-text);
+  }
+  .vr-count {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint);
+  }
+  .vr-hint {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-faint);
+    border: 1px solid var(--c-border); border-radius: 3px; padding: 5px 10px;
+    max-width: 480px; line-height: 1.5;
+  }
+
+  /* Add rule form card */
+  .vr-add-form {
+    background: var(--c-card); border: 1px solid var(--c-accent-bd);
+    border-radius: 3px; padding: 16px 18px;
+    margin-bottom: 14px;
+    display: none;
+  }
+  .vr-add-form.open { display: block; }
+  .vr-add-form-title {
+    font-family: 'Spectral', serif; font-size: 14px; margin-bottom: 14px; color: var(--c-text);
+  }
+  .vr-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 100px 180px 100px 90px;
+    gap: 8px;
+    align-items: end;
+  }
+  .vr-field { display: flex; flex-direction: column; gap: 4px; }
+  .vr-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--c-faint);
+  }
+  .vr-input, .vr-select {
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text); border-radius: 2px; padding: 7px 9px;
+    font-size: 12px;
+  }
+  .vr-input { font-family: 'IBM Plex Mono', monospace; }
+  .vr-form-actions { display: flex; gap: 6px; align-items: center; padding-top: 14px; }
+
+  /* Table */
+  .vr-table { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden; }
+  .vr-cols   { grid-template-columns: 28px 1fr 80px 140px 90px 80px 160px; }
+  .row-cb { width: 14px; height: 14px; cursor: pointer; accent-color: var(--c-accent); }
+  .vr-header {
+    display: grid; padding: 9px 14px;
+    border-bottom: 1px solid var(--c-border);
+    background: var(--c-subtle);
+  }
+  .vr-header span {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--c-faint);
+  }
+  .vr-row {
+    display: grid; padding: 9px 14px;
+    border-bottom: 1px solid var(--c-border2);
+    align-items: center;
+  }
+  .vr-row:last-child { border-bottom: none; }
+  .vr-row:hover { background: var(--c-subtle); }
+
+  /* Pattern cell */
+  .vr-pattern {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    color: var(--c-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding-right: 10px;
+  }
+  .vr-match-type {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+    color: var(--c-faint); margin-top: 2px;
+  }
+
+  /* Category chip */
+  .cat-chip-vr {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: var(--c-subtle); border: 1px solid var(--c-border2);
+    color: var(--c-text2); padding: 2px 7px; border-radius: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: inline-block; max-width: 130px;
+  }
+
+  /* Money type tag */
+  .mtype-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    padding: 2px 6px; border-radius: 2px;
+  }
+  .mtype-tag.expense  { background: var(--c-red-bg);   color: var(--c-red-t);   border: 1px solid var(--c-red-bd); }
+  .mtype-tag.income   { background: var(--c-green-bg); color: var(--c-green-t); border: 1px solid var(--c-green-bd); }
+  .mtype-tag.transfer { background: var(--c-subtle);   color: var(--c-muted);   border: 1px solid var(--c-border); }
+
+  /* Actions */
+  .vr-actions { display: flex; gap: 5px; justify-content: flex-end; }
+  .del-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: var(--c-red-bg); color: var(--c-red-t);
+    border: 1px solid var(--c-red-bd); border-radius: 2px;
+    padding: 3px 8px; cursor: pointer;
+  }
+  .del-btn:hover { opacity: .8; }
+  .approve-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: var(--c-green-bg); color: var(--c-green-t);
+    border: 1px solid var(--c-green-bd); border-radius: 2px;
+    padding: 3px 8px; cursor: pointer;
+  }
+  .approve-btn:hover { opacity: .8; }
+  .reject-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: transparent; color: var(--c-faint);
+    border: 1px solid var(--c-border); border-radius: 2px;
+    padding: 3px 8px; cursor: pointer;
+  }
+  .reject-btn:hover { border-color: var(--c-red-bd); color: var(--c-red-t); }
+
+  /* Pending row */
+  .vr-row.pending { background: var(--c-amber-bg); }
+  .vr-row.bulk-selected { background: var(--c-accent-bg); }
+  .pending-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 700;
+    background: var(--c-amber-bg); color: var(--c-amber-t);
+    border: 1px solid var(--c-amber-bd); border-radius: 2px;
+    padding: 1px 5px; margin-left: 6px; vertical-align: middle;
+  }
+
+  /* Bulk action bar */
+  .bulk-bar {
+    display: none; position: sticky; bottom: 0; z-index: 200;
+    background: var(--c-card); border: 1px solid var(--c-accent-bd);
+    border-radius: 4px; margin-top: 10px; padding: 10px 16px;
+    align-items: center; gap: 10px; flex-wrap: wrap;
+    box-shadow: 0 -4px 16px rgba(0,0,0,.3);
+  }
+  .bulk-bar.visible { display: flex; }
+  .bulk-bar-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-accent); font-weight: 600; white-space: nowrap; }
+  .bulk-approve-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+    background: var(--c-green-bg); color: var(--c-green-t);
+    border: 1px solid var(--c-green-bd); border-radius: 3px;
+    padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .bulk-remove-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+    background: var(--c-red-bg); color: var(--c-red-t);
+    border: 1px solid var(--c-red-bd); border-radius: 3px;
+    padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .bulk-cancel-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    background: transparent; border: 1px solid var(--c-border); color: var(--c-muted);
+    border-radius: 3px; padding: 7px 12px; cursor: pointer;
+  }
+
+  /* Empty */
+  .vr-empty {
+    padding: 48px 24px; text-align: center;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint);
+  }
+
+  /* Buttons */
+  .btn-add {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500;
+    background: var(--c-accent-bg); color: var(--c-accent);
+    border: 1px solid var(--c-accent-bd); border-radius: 3px;
+    padding: 6px 12px; cursor: pointer;
+  }
+  .btn-add:hover { opacity: .85; }
+  .btn-cancel {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    background: transparent; color: var(--c-faint);
+    border: 1px solid var(--c-border); border-radius: 3px;
+    padding: 6px 12px; cursor: pointer;
+  }
+  .btn-save {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500;
+    background: var(--c-accent); color: #080a10;
+    border: none; border-radius: 3px;
+    padding: 6px 12px; cursor: pointer;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vr-wrap">
+
+  <!-- Page header -->
+  <div class="vr-page-header">
+    <div>
+      <div class="vr-page-title">
+        <h1>Vendor Rules</h1>
+        <span class="vr-count">{{ rules|length }} rule{{ 's' if rules|length != 1 }}</span>
+        {% if pending_count %}
+        <span class="pending-badge">{{ pending_count }} pending review</span>
+        {% endif %}
+      </div>
+      <div class="vr-hint" style="margin-top:6px">Longer patterns match first — a 12-char pattern wins over a 4-char one for the same description. Auto-suggested rules wait here for your approval before they're applied.</div>
+    </div>
+    <button class="btn-add" onclick="toggleAddForm()">+ Add rule</button>
+  </div>
+
+  <!-- Add rule form -->
+  <div class="vr-add-form" id="vr-add-form">
+    <div class="vr-add-form-title">New vendor rule</div>
+    <form method="post" action="{{ url_for('add_vendor_rule') }}">
+      <div class="vr-form-grid">
+        <div class="vr-field">
+          <label class="vr-label" for="f-pattern">Pattern (substring / prefix)</label>
+          <input id="f-pattern" name="pattern" class="vr-input" placeholder="e.g. AMZN MKTP" required autofocus>
+        </div>
+        <div class="vr-field">
+          <label class="vr-label" for="f-match">Match type</label>
+          <select id="f-match" name="match_type" class="vr-select">
+            <option value="contains">contains</option>
+            <option value="exact">exact</option>
+            <option value="regex">regex</option>
+          </select>
+        </div>
+        <div class="vr-field">
+          <label class="vr-label" for="f-cat">Category</label>
+          <select id="f-cat" name="category_id" class="vr-select" required>
+            <option value="">— select —</option>
+            {% for c in categories %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="vr-field">
+          <label class="vr-label" for="f-mtype">Money type</label>
+          <select id="f-mtype" name="money_type" class="vr-select">
+            <option value="expense">expense</option>
+            <option value="income">income</option>
+            <option value="transfer">transfer</option>
+          </select>
+        </div>
+        <div class="vr-field">
+          <label class="vr-label" for="f-conf">Confidence</label>
+          <select id="f-conf" name="confidence" class="vr-select">
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+        </div>
+      </div>
+      <div class="vr-form-actions">
+        <button type="submit" class="btn-save">Save rule</button>
+        <button type="button" class="btn-cancel" onclick="toggleAddForm()">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Rules table -->
+  <div class="vr-table">
+    <div class="vr-header vr-cols">
+      <span><input type="checkbox" id="select-all-cb" class="row-cb" onchange="toggleSelectAll(this)"></span>
+      <span>Pattern</span>
+      <span>Match</span>
+      <span>Category</span>
+      <span>Money type</span>
+      <span style="text-align:right">Conf.</span>
+      <span style="text-align:right">Actions</span>
+    </div>
+
+    {% if rules %}
+      {% for r in rules %}
+      <div class="vr-row vr-cols {% if r.is_pending %}pending{% endif %}" id="vr-row-{{ r.id }}">
+
+        <span><input type="checkbox" class="row-cb bulk-cb" data-id="{{ r.id }}" onchange="onRowCheck()"></span>
+
+        <div>
+          <div class="vr-pattern" title="{{ r.pattern }}">
+            {{ r.pattern }}
+            {% if r.is_pending %}<span class="pending-badge">Pending</span>{% endif %}
+          </div>
+        </div>
+
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">{{ r.match_type }}</span>
+
+        <span><span class="cat-chip-vr" title="{{ r.category_name or '—' }}">{{ r.category_name or '—' }}</span></span>
+
+        <span>
+          <span class="mtype-tag {{ r.money_type or 'expense' }}">{{ r.money_type or 'expense' }}</span>
+        </span>
+
+        <span style="text-align:right">
+          {% if r.confidence == 'high' %}
+            <span class="conf-high-full">high</span>
+          {% elif r.confidence == 'medium' %}
+            <span class="conf-medium">med</span>
+          {% else %}
+            <span class="conf-low">low</span>
+          {% endif %}
+        </span>
+
+        <div class="vr-actions">
+          {% if r.is_pending %}
+          <form method="post" action="{{ url_for('approve_vendor_rule', rule_id=r.id) }}" style="display:inline">
+            <button type="submit" class="approve-btn">✓ Approve</button>
+          </form>
+          <form method="post" action="{{ url_for('reject_vendor_rule', rule_id=r.id) }}"
+                onsubmit="return confirm('Reject suggested rule for «{{ r.pattern }}»?')" style="display:inline">
+            <button type="submit" class="reject-btn">✕ Reject</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('delete_vendor_rule', rule_id=r.id) }}"
+                onsubmit="return confirm('Delete rule for «{{ r.pattern }}»?')">
+            <button type="submit" class="del-btn">✕ Del</button>
+          </form>
+          {% endif %}
+        </div>
+
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="vr-empty">No vendor rules yet — add one above to start auto-categorising.</div>
+    {% endif %}
+  </div>
+
+  <!-- Bulk action bar -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-bar-label" id="bulk-label">0 selected</span>
+    <button class="bulk-approve-btn" onclick="bulkApprove()">✓ Approve selected</button>
+    <button class="bulk-remove-btn" onclick="bulkRemove()">✕ Remove selected</button>
+    <button class="bulk-cancel-btn" onclick="clearSelection()">Cancel</button>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function toggleAddForm() {
+    const form = document.getElementById('vr-add-form');
+    const isOpen = form.classList.toggle('open');
+    if (isOpen) {
+      setTimeout(() => document.getElementById('f-pattern').focus(), 50);
+    }
+  }
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  function toggleSelectAll(cb) {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      c.checked = cb.checked;
+      c.closest('.vr-row').classList.toggle('bulk-selected', cb.checked);
+    });
+    syncBulkBar();
+  }
+
+  function onRowCheck() {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      c.closest('.vr-row').classList.toggle('bulk-selected', c.checked);
+    });
+    const allChecked = [...document.querySelectorAll('.bulk-cb')].every(c => c.checked);
+    document.getElementById('select-all-cb').checked = allChecked;
+    syncBulkBar();
+  }
+
+  function syncBulkBar() {
+    const selected = Array.from(document.querySelectorAll('.bulk-cb:checked'));
+    const bar = document.getElementById('bulk-bar');
+    bar.classList.toggle('visible', selected.length > 0);
+    document.getElementById('bulk-label').textContent = `${selected.length} selected`;
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.bulk-cb').forEach(c => { c.checked = false; c.closest('.vr-row').classList.remove('bulk-selected'); });
+    document.getElementById('select-all-cb').checked = false;
+    syncBulkBar();
+  }
+
+  function selectedRuleIds() {
+    return Array.from(document.querySelectorAll('.bulk-cb:checked')).map(c => parseInt(c.dataset.id));
+  }
+
+  function bulkApprove() {
+    const ids = selectedRuleIds();
+    if (!ids.length) return;
+    fetch('/api/vendor-rules/bulk-approve', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_ids: ids}),
+    }).then(r => r.json()).then(() => {
+      window.location.reload();
+    }).catch(console.error);
+  }
+
+  function bulkRemove() {
+    const ids = selectedRuleIds();
+    if (!ids.length) return;
+    if (!confirm(`Remove ${ids.length} selected rule${ids.length !== 1 ? 's' : ''}?`)) return;
+    fetch('/api/vendor-rules/bulk-delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_ids: ids}),
+    }).then(r => r.json()).then(() => {
+      window.location.reload();
+    }).catch(console.error);
+  }
+</script>
+{% endblock %}

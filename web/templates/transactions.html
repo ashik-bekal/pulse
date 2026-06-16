@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+{% block title %}Transactions — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .txn-wrap { padding: 20px 24px; max-width: 1500px; margin: 0 auto; }
+  .txn-filters {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .txn-filters-title {
+    font-family: 'Spectral', serif; font-size: 18px;
+    color: var(--c-text); margin-right: 4px;
+  }
+  .txn-row-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px; color: var(--c-faint); margin-left: auto;
+  }
+
+  /* Search input */
+  .txn-desc-search {
+    flex: 1; min-width: 160px;
+    background: var(--c-card); border: 1px solid var(--c-border);
+    color: var(--c-text); border-radius: 3px; padding: 6px 10px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  }
+  .txn-search-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text2); border-radius: 2px; padding: 6px 10px; cursor: pointer;
+  }
+  .txn-clear-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: transparent; border: 1px solid var(--c-border);
+    color: var(--c-faint); border-radius: 2px; padding: 6px 10px; cursor: pointer;
+    text-decoration: none;
+  }
+
+  /* Table */
+  .txn-table { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden; }
+  .txn-cols  { grid-template-columns: 28px 90px 80px 1fr 108px 68px 80px 110px 110px 110px 62px; }
+
+  .mtype-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    padding: 2px 6px; border-radius: 2px; display: inline-block;
+  }
+  .mtype-tag.expense       { background: var(--c-red-bg);    color: var(--c-red-t);   border: 1px solid var(--c-red-bd);   }
+  .mtype-tag.income        { background: var(--c-green-bg);  color: var(--c-green-t); border: 1px solid var(--c-green-bd); }
+  .mtype-tag.reimbursement { background: var(--c-accent-bg); color: var(--c-accent);  border: 1px solid var(--c-accent-bd);}
+  .mtype-tag.transfer      { background: var(--c-subtle);    color: var(--c-muted);   border: 1px solid var(--c-border);   }
+  .mtype-tag.loan_repayment{ background: var(--c-subtle);    color: var(--c-muted);   border: 1px solid var(--c-border);   }
+  .mtype-tag.unconfirmed {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    color: var(--c-faint); opacity: .65;
+  }
+  .txn-header { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border); background: var(--c-subtle); }
+  .txn-row    { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border2); align-items: center; }
+  .txn-row:last-child { border-bottom: none; }
+  .txn-row.fx { background: var(--c-accent-bg); }
+  .txn-row.bulk-selected { background: rgba(99,179,237,.08); }
+
+  /* Row checkbox */
+  .row-cb { width: 14px; height: 14px; cursor: pointer; accent-color: var(--c-accent); }
+
+  /* Category inline edit */
+  .cat-chip {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    background: var(--c-subtle); border: 1px solid var(--c-border2);
+    color: var(--c-text2); padding: 2px 7px; border-radius: 2px;
+    cursor: pointer; display: block; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cat-chip:hover { border-color: var(--c-accent); color: var(--c-text); }
+  .cat-select {
+    font-size: 10.5px; width: 100%;
+    background: var(--c-accent-bg); border: 1px solid var(--c-accent-bd);
+    color: var(--c-text); border-radius: 2px; padding: 3px 6px;
+  }
+
+  /* Amount cols */
+  .amt { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .amt-income  { color: var(--c-green-t); }
+  .amt-expense { color: var(--c-text);    }
+  .amt-neutral { color: var(--c-text2);   }
+
+  /* Trip inline edit */
+  .trip-edit-cell { position: relative; }
+  .trip-chip {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--c-faint); cursor: pointer; display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .trip-chip:hover { color: var(--c-accent); }
+  .trip-chip.tagged { color: var(--c-accent); font-weight: 500; }
+  .trip-select {
+    font-size: 10px; width: 100%;
+    background: var(--c-accent-bg); border: 1px solid var(--c-accent-bd);
+    color: var(--c-text); border-radius: 2px; padding: 3px 5px;
+  }
+
+  .txn-date { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--c-faint); }
+  .txn-desc { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 12px; color: var(--c-text); }
+  .txn-empty {
+    padding: 48px 24px; text-align: center;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-faint);
+  }
+  .saving-dot {
+    display: none; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--c-amber); margin-left: 4px; vertical-align: middle;
+  }
+
+  /* Bulk action bar */
+  .bulk-bar {
+    display: none; position: sticky; bottom: 0; z-index: 200;
+    background: var(--c-card); border: 1px solid var(--c-accent-bd);
+    border-radius: 4px; margin-top: 10px; padding: 10px 16px;
+    align-items: center; gap: 10px; flex-wrap: wrap;
+    box-shadow: 0 -4px 16px rgba(0,0,0,.3);
+  }
+  .bulk-bar.visible { display: flex; }
+  .bulk-bar-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-accent); font-weight: 600; white-space: nowrap; }
+  .bulk-sel       { flex: 1; min-width: 140px; background: var(--c-subtle); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 2px; padding: 6px 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+  .bulk-apply-btn { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; background: var(--c-accent); color: #080a10; border: none; border-radius: 3px; padding: 7px 16px; cursor: pointer; white-space: nowrap; }
+  .bulk-cancel-btn { font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: transparent; border: 1px solid var(--c-border); color: var(--c-muted); border-radius: 3px; padding: 7px 12px; cursor: pointer; }
+  .bulk-feedback  { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-green-t); }
+  .bulk-selected-total { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--c-text2); white-space: nowrap; }
+
+  /* Filtered totals footer */
+  .txn-totals-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-top: 1px solid var(--c-border);
+    background: var(--c-subtle);
+  }
+  .txn-totals-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-faint); }
+  .txn-totals-figs { display: flex; gap: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .tt-income  { color: var(--c-green-t); }
+  .tt-expense { color: var(--c-red-t); }
+  .tt-reimb   { color: var(--c-accent); }
+  .tt-net     { font-weight: 600; padding-left: 14px; border-left: 1px solid var(--c-border2); }
+  .tt-net.pos { color: var(--c-green-t); }
+  .tt-net.neg { color: var(--c-red-t); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="txn-wrap">
+
+  <!-- Filters -->
+  <form class="txn-filters" method="get" id="filter-form">
+    <span class="txn-filters-title">Transactions</span>
+
+    <select name="account_id" class="filter-sel" onchange="this.form.submit()">
+      <option value="">All accounts</option>
+      {% for a in accounts %}
+      <option value="{{ a.id }}" {% if account_filter == a.id|string %}selected{% endif %}>{{ a.display_name }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="confidence" class="filter-sel" onchange="this.form.submit()">
+      <option value="">All confidence</option>
+      <option value="high"   {% if confidence_filter == 'high'   %}selected{% endif %}>High</option>
+      <option value="medium" {% if confidence_filter == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="low"    {% if confidence_filter == 'low'    %}selected{% endif %}>Low</option>
+    </select>
+
+    <select name="year_month" class="filter-sel" onchange="this.form.submit()">
+      <option value="">All months</option>
+      {% for ym in avail_months %}
+      <option value="{{ ym }}" {% if month_filter == ym %}selected{% endif %}>{{ ym }}</option>
+      {% endfor %}
+    </select>
+
+    <input class="txn-desc-search" type="search" name="description"
+           value="{{ desc_filter or '' }}"
+           placeholder="Search description…"
+           onkeydown="if(event.key==='Enter'){this.form.submit()}">
+    <button class="txn-search-btn" type="submit">Search</button>
+    {% if desc_filter %}
+    <a class="txn-clear-btn" href="?{{ [('account_id', account_filter), ('confidence', confidence_filter), ('year_month', month_filter)] | selectattr(1) | map('join', '=') | join('&') }}">✕ Clear</a>
+    {% endif %}
+
+    <span class="txn-row-count">{{ transactions|length }} rows shown</span>
+  </form>
+
+  <!-- Table -->
+  <div class="txn-table">
+    <div class="txn-header txn-cols">
+      <span><input type="checkbox" id="select-all-cb" class="row-cb" onchange="toggleSelectAll(this)"></span>
+      <span>Date</span>
+      <span>Account</span>
+      <span>Description</span>
+      <span>Category ✎</span>
+      <span>Trip</span>
+      <span>Type</span>
+      <span style="text-align:right">Native</span>
+      <span style="text-align:right">Settled</span>
+      <span style="text-align:right">Reporting (GBP)</span>
+      <span style="text-align:right">Conf.</span>
+    </div>
+
+    {% if transactions %}
+      {% for t in transactions %}
+      {% set is_fx = t.transaction_currency != t.settlement_currency %}
+      {% set is_income = t.money_type == 'income' or t.transaction_amount > 0 %}
+      <div class="txn-row txn-cols {% if is_fx %}fx{% endif %}"
+           id="txn-row-{{ t.id }}"
+           data-txn-id="{{ t.id }}"
+           data-money-type="{{ t.money_type }}">
+
+        <span><input type="checkbox" class="row-cb bulk-cb" data-id="{{ t.id }}"
+                      data-reporting-amount="{{ t.reporting_amount }}" data-money-type="{{ t.money_type }}"
+                      onchange="onRowCheck()"></span>
+        <span class="txn-date txn-clickable" onclick="openTxnModal({{ t.id }})">{{ t.transaction_date }}</span>
+        <span><span class="acct-chip">{{ t.account_name.split(' ')[-1][:8] }}</span></span>
+        <span class="txn-desc txn-clickable" title="{{ t.description }} — click to edit" onclick="openTxnModal({{ t.id }})">{{ t.description }}</span>
+
+        <!-- Inline category editor -->
+        <span class="cat-edit-cell">
+          <span class="cat-chip" onclick="startCatEdit(this, {{ t.id }})">
+            {{ t.category_name or '—' }}
+          </span>
+          <select class="cat-select" style="display:none"
+                  onblur="saveCatEdit(this, {{ t.id }})"
+                  onchange="saveCatEdit(this, {{ t.id }})">
+            <option value="">— no category —</option>
+            {% for c in categories %}
+            <option value="{{ c.id }}" {% if t.category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </span>
+
+        <!-- Inline trip editor -->
+        <span class="trip-edit-cell">
+          <span class="trip-chip {% if t.trip_id %}tagged{% endif %}"
+                onclick="startTripEdit(this, {{ t.id }})">
+            {{ t.trip_name or '+ trip' }}
+          </span>
+          <select class="trip-select" style="display:none"
+                  onblur="saveTripEdit(this, {{ t.id }})"
+                  onchange="saveTripEdit(this, {{ t.id }})">
+            <option value="">— no trip —</option>
+            {% for tr in trips %}
+            <option value="{{ tr.id }}" {% if t.trip_id == tr.id %}selected{% endif %}>{{ tr.name }}</option>
+            {% endfor %}
+          </select>
+        </span>
+
+        <!-- Money type: shown as a solid badge once confirmed (high
+             confidence); muted for medium/low since the auto-guessed value
+             hasn't been validated yet and may still change. -->
+        <span>
+          {% if t.confidence == 'high' %}
+            {% set mtype_abbr = {'expense':'Exp','income':'Inc','reimbursement':'Reimb','transfer':'Trf','loan_repayment':'Loan'} %}
+            <span class="mtype-tag {{ t.money_type }}">{{ mtype_abbr.get(t.money_type, t.money_type) }}</span>
+          {% else %}
+            <span class="mtype-tag unconfirmed" title="Not yet confirmed">{{ t.money_type }}?</span>
+          {% endif %}
+        </span>
+
+        <!-- Native amount -->
+        {% set is_credit = t.transaction_amount > 0 %}
+        <span class="amt {% if is_credit %}amt-income{% else %}amt-expense{% endif %}">
+          {{ '-' if not is_credit else '+' }}{{ t.transaction_currency|ccy }}{{ t.transaction_amount|fmt }}
+        </span>
+
+        <!-- Settled amount -->
+        <span class="amt amt-neutral">
+          {% if is_fx %}{{ t.settlement_currency|ccy }}{{ t.settlement_amount|fmt }}{% else %}—{% endif %}
+        </span>
+
+        <!-- Reporting amount (GBP) — what actually feeds totals/net-worth;
+             shown even for non-FX rows since GBP accounts still round-trip
+             through this column for consistency, and it's the one figure
+             comparable across every row regardless of account currency. -->
+        {% set is_report_credit = t.reporting_amount > 0 %}
+        <span class="amt {% if is_report_credit %}amt-income{% else %}amt-expense{% endif %}">
+          {{ '-' if not is_report_credit else '+' }}£{{ t.reporting_amount|fmt }}
+        </span>
+
+        <!-- Confidence -->
+        <span style="text-align:right">
+          {% if t.confidence == 'high' %}
+            <span class="conf-high">✓</span>
+          {% elif t.confidence == 'medium' %}
+            <span class="conf-medium">med</span>
+          {% else %}
+            <span class="conf-low">low</span>
+          {% endif %}
+        </span>
+
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="txn-empty">No transactions match the current filters.</div>
+    {% endif %}
+
+    {% if transactions %}
+    <div class="txn-totals-row">
+      <span class="txn-totals-label">{{ totals.count }} transaction{{ 's' if totals.count != 1 }} — all figures in GBP (reporting currency)</span>
+      <span class="txn-totals-figs">
+        <span class="tt-income">Income £{{ totals.income|fmt }}</span>
+        <span class="tt-expense">Expense £{{ totals.expense|fmt }}</span>
+        {% if totals.reimbursement %}<span class="tt-reimb">Reimb £{{ totals.reimbursement|fmt }}</span>{% endif %}
+        <span class="tt-net {{ 'neg' if totals.net < 0 else 'pos' }}">Net {{ '-' if totals.net < 0 else '' }}£{{ totals.net|abs|fmt }}</span>
+      </span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Bulk action bar -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-bar-label" id="bulk-label">0 selected</span>
+    <span class="bulk-selected-total" id="bulk-selected-total"></span>
+    <select class="bulk-sel" id="bulk-cat">
+      <option value="">— keep existing category —</option>
+      {% for c in categories %}
+      <option value="{{ c.id }}">{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="bulk-sel" id="bulk-trip">
+      <option value="">— keep existing trip —</option>
+      {% for tr in trips %}
+      <option value="{{ tr.id }}">{{ tr.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="bulk-apply-btn" onclick="bulkApply()">Apply to selected</button>
+    <button class="bulk-cancel-btn" onclick="clearSelection()">✕ Cancel</button>
+    <span class="bulk-feedback" id="bulk-feedback"></span>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // ── Inline category edit ──────────────────────────────────────────────────
+  function startCatEdit(chipEl, txnId) {
+    const cell   = chipEl.closest('.cat-edit-cell');
+    const select = cell.querySelector('select');
+    chipEl.style.display  = 'none';
+    select.style.display  = 'block';
+    select.focus();
+  }
+
+  function saveCatEdit(selectEl, txnId) {
+    const cell    = selectEl.closest('.cat-edit-cell');
+    const chip    = cell.querySelector('.cat-chip');
+    const catId   = selectEl.value;
+    const catText = selectEl.options[selectEl.selectedIndex].text;
+    const row     = selectEl.closest('.txn-row');
+    const mtype   = row.dataset.moneyType || 'expense';
+
+    selectEl.style.display = 'none';
+    chip.style.display = 'block';
+    chip.textContent = catText;
+
+    if (!catId) return;
+
+    fetch(`/api/transactions/${txnId}/categorize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category_id: catId, money_type: mtype}),
+    }).catch(console.error);
+  }
+
+  // ── Inline trip edit ──────────────────────────────────────────────────────
+  function startTripEdit(chipEl, txnId) {
+    const cell   = chipEl.closest('.trip-edit-cell');
+    const select = cell.querySelector('select');
+    chipEl.style.display  = 'none';
+    select.style.display  = 'block';
+    select.focus();
+  }
+
+  function saveTripEdit(selectEl, txnId) {
+    const cell     = selectEl.closest('.trip-edit-cell');
+    const chip     = cell.querySelector('.trip-chip');
+    const tripId   = selectEl.value;
+    const tripText = selectEl.options[selectEl.selectedIndex].text;
+
+    selectEl.style.display = 'none';
+    chip.style.display = 'block';
+
+    if (tripId) {
+      chip.textContent = tripText;
+      chip.classList.add('tagged');
+    } else {
+      chip.textContent = '+ trip';
+      chip.classList.remove('tagged');
+    }
+
+    fetch(`/api/transactions/${txnId}/set-trip`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({trip_id: tripId || null}),
+    }).catch(console.error);
+  }
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  function toggleSelectAll(cb) {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      c.checked = cb.checked;
+      c.closest('.txn-row').classList.toggle('bulk-selected', cb.checked);
+    });
+    syncBulkBar();
+  }
+
+  function onRowCheck() {
+    document.querySelectorAll('.bulk-cb').forEach(c => {
+      c.closest('.txn-row').classList.toggle('bulk-selected', c.checked);
+    });
+    const allChecked = [...document.querySelectorAll('.bulk-cb')].every(c => c.checked);
+    document.getElementById('select-all-cb').checked = allChecked;
+    syncBulkBar();
+  }
+
+  function syncBulkBar() {
+    const selected = Array.from(document.querySelectorAll('.bulk-cb:checked'));
+    const bar = document.getElementById('bulk-bar');
+    bar.classList.toggle('visible', selected.length > 0);
+    document.getElementById('bulk-label').textContent = `${selected.length} selected`;
+    document.getElementById('bulk-feedback').textContent = '';
+
+    // Live net total of the checked rows — same convention as the footer
+    // (income positive, expense negated to positive-magnitude, transfers
+    // excluded, reimbursement offsets expense), summed in reporting_amount
+    // (GBP) since native currencies can differ across rows.
+    let net = 0;
+    for (const cb of selected) {
+      const amt = parseFloat(cb.dataset.reportingAmount) || 0;
+      const mtype = cb.dataset.moneyType;
+      if (mtype === 'transfer') continue;
+      net += amt;
+    }
+    const totalEl = document.getElementById('bulk-selected-total');
+    if (selected.length) {
+      const sign = net < 0 ? '-' : '';
+      totalEl.textContent = `Total: ${sign}£${Math.abs(net).toFixed(2)}`;
+    } else {
+      totalEl.textContent = '';
+    }
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.bulk-cb').forEach(c => { c.checked = false; c.closest('.txn-row').classList.remove('bulk-selected'); });
+    document.getElementById('select-all-cb').checked = false;
+    syncBulkBar();
+  }
+
+  function bulkApply() {
+    const ids    = Array.from(document.querySelectorAll('.bulk-cb:checked')).map(c => parseInt(c.dataset.id));
+    const catId  = document.getElementById('bulk-cat').value  || null;
+    const tripId = document.getElementById('bulk-trip').value || null;
+    if (!ids.length) return;
+    if (!catId && !tripId) { alert('Select a category or trip to apply.'); return; }
+
+    fetch('/api/transactions/bulk-update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({txn_ids: ids, category_id: catId, trip_id: tripId}),
+    }).then(r => r.json()).then(data => {
+      // Update chips in DOM so page feels instant
+      ids.forEach(id => {
+        const row = document.getElementById('txn-row-' + id);
+        if (!row) return;
+        if (catId) {
+          const catSel = document.getElementById('bulk-cat');
+          const catText = catSel.options[catSel.selectedIndex].text;
+          const chip = row.querySelector('.cat-chip');
+          if (chip) chip.textContent = catText;
+        }
+        if (tripId) {
+          const tripSel = document.getElementById('bulk-trip');
+          const tripText = tripSel.options[tripSel.selectedIndex].text;
+          const chip = row.querySelector('.trip-chip');
+          if (chip) { chip.textContent = tripText; chip.classList.add('tagged'); }
+        }
+      });
+      document.getElementById('bulk-feedback').textContent = `✓ Updated ${data.updated}`;
+      clearSelection();
+    }).catch(console.error);
+  }
+</script>
+{% endblock %}

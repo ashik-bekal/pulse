@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+{% block title %}{% if trip %}{{ trip.name }} — {% endif %}Trips — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .trips-layout {
+    display: flex;
+    height: calc(100vh - 50px);
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .trips-sidebar {
+    width: 234px; flex-shrink: 0;
+    border-right: 1px solid var(--c-border);
+    overflow-y: auto;
+    background: var(--c-nav);
+  }
+  .sidebar-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .sidebar-title { font-family:'Spectral',serif; font-size:15px; color:var(--c-text); }
+  .sidebar-sub   { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); margin-top:3px; }
+
+  .trip-item {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--c-border2);
+    display: block; text-decoration: none;
+    border-left: 3px solid transparent;
+    background: transparent;
+  }
+  .trip-item:hover:not(.active) { background: rgba(255,255,255,.03); }
+  .trip-item.active { background:var(--c-accent-bg); border-left-color:var(--c-accent); }
+  .trip-item-name { font-weight:600; font-size:13.5px; color:var(--c-text); }
+  .trip-item-sub  { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); margin-top:2px; }
+  .trip-item-foot { display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; }
+  .trip-item-total { font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:500; font-variant-numeric:tabular-nums; color:var(--c-text); }
+  .trip-item-txns  { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-faint); }
+
+  /* Detail pane */
+  .trips-detail { flex:1; overflow-y:auto; background:var(--c-bg); }
+  .detail-inner { padding:22px 26px; max-width:1060px; }
+
+  /* Trip header */
+  .trip-hdr { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; padding-bottom:18px; border-bottom:1px solid var(--c-border); }
+  .trip-name { font-family:'Spectral',serif; font-size:34px; font-weight:600; letter-spacing:-.01em; line-height:1; color:var(--c-text); }
+  .trip-dates { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-muted); margin-top:8px; }
+  .trip-stats { display:flex; gap:28px; font-family:'IBM Plex Mono',monospace; }
+  .trip-stat  { text-align:right; }
+  .trip-stat-label { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--c-faint); }
+  .trip-stat-lg { font-size:32px; font-weight:500; margin-top:5px; font-variant-numeric:tabular-nums; color:var(--c-text); }
+  .trip-stat-sm { font-size:22px; font-weight:500; margin-top:9px; font-variant-numeric:tabular-nums; color:var(--c-text2); }
+
+  /* Breakdown grid */
+  .breakdown-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .bk-card   { padding:16px 18px; }
+  .bk-title  { font-family:'Spectral',serif; font-size:14px; margin-bottom:14px; color:var(--c-text); }
+  .bk-row    { margin-bottom:13px; }
+  .bk-head   { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; }
+  .bk-dot    { width:8px; height:8px; border-radius:1px; flex-shrink:0; display:inline-block; }
+  .bk-lbl    { display:flex; align-items:center; gap:7px; }
+  .bk-name   { font-size:12.5px; color:var(--c-text2); }
+  .bk-val    { font-family:'IBM Plex Mono',monospace; font-size:11px; }
+  .bk-val strong { font-weight:500; color:var(--c-text); }
+  .bk-val em     { font-style:normal; color:var(--c-faint); margin-left:6px; }
+  .bk-track  { position:relative; border-radius:2px; overflow:hidden; background:var(--c-border); }
+  .bk-fill   { position:absolute; left:0; top:0; height:100%; border-radius:2px; opacity:.85; }
+  .bk-native { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--c-faint); margin-top:4px; }
+
+  /* Timeline */
+  .tl-card   { padding:16px 18px; margin-bottom:14px; }
+  .tl-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+  .tl-title  { font-family:'Spectral',serif; font-size:14px; color:var(--c-text); }
+  .tl-legend { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-faint); }
+  .tl-bars   { display:flex; align-items:flex-end; gap:4px; height:80px; border-bottom:1px solid var(--c-border2); }
+  .tl-bar-col { flex:1; }
+  .tl-bar    { width:100%; border-radius:2px 2px 0 0; }
+
+  /* Trip transactions table */
+  .tt-wrap   { border-radius:3px; overflow:hidden; }
+  .tt-cols   { grid-template-columns:58px 70px 1fr 96px 108px 108px 58px; }
+  .tt-subhdr { padding:12px 16px; border-bottom:1px solid var(--c-border); display:flex; justify-content:space-between; align-items:center; background:var(--c-subtle); }
+  .tt-header { display:grid; padding:8px 14px; border-bottom:1px solid var(--c-border); background:var(--c-subtle); }
+  .tt-header span { font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--c-faint); }
+  .tt-row    { display:grid; padding:9px 14px; border-bottom:1px solid var(--c-border2); align-items:center; }
+  .tt-row.fx { background:var(--c-accent-bg); }
+  .tt-row:last-child { border-bottom:none; }
+
+  .trips-empty { display:flex; align-items:center; justify-content:center; height:100%; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); }
+
+  /* Sidebar trip management */
+  .trip-add-btn {
+    width:26px; height:26px; border-radius:3px; border:1px solid var(--c-accent-bd);
+    background:var(--c-accent-bg); color:var(--c-accent); font-size:18px; line-height:1;
+    cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  }
+  .trip-add-form {
+    display:none; padding:14px 16px; border-bottom:1px solid var(--c-border);
+    background:var(--c-accent-bg);
+  }
+  .trip-add-form.open { display:block; }
+  .trip-form-input {
+    width:100%; background:var(--c-subtle); border:1px solid var(--c-border);
+    color:var(--c-text); border-radius:2px; padding:6px 8px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; margin-top:0;
+  }
+  .trip-form-save   { flex:1; background:var(--c-accent); color:#080a10; border:none; border-radius:2px; padding:6px; font-size:11px; font-weight:600; cursor:pointer; }
+  .trip-form-cancel { background:transparent; border:1px solid var(--c-border); color:var(--c-faint); border-radius:2px; padding:6px 10px; font-size:11px; cursor:pointer; }
+  .trip-form-err    { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-red-t); margin-top:6px; display:none; }
+  .trip-form-err.show { display:block; }
+
+  /* Wrapper so delete button overlays the trip item */
+  .trip-item-wrap { position:relative; }
+  .trip-item-wrap .trip-item { padding-right:30px; }
+  .trip-del-btn {
+    position:absolute; top:12px; right:10px;
+    background:transparent; border:none; color:var(--c-faint);
+    font-size:12px; cursor:pointer; padding:2px 4px; border-radius:2px;
+    opacity:0; transition:opacity .15s;
+  }
+  .trip-item-wrap:hover .trip-del-btn { opacity:1; }
+  .trip-del-btn:hover { color:var(--c-red-t); background:var(--c-red-bg); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="trips-layout">
+
+  <!-- Sidebar -->
+  <div class="trips-sidebar">
+    <div class="sidebar-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="sidebar-title">Trips</div>
+        <div class="sidebar-sub">{{ trips|length }} trip{{ 's' if trips|length != 1 }}</div>
+      </div>
+      <button class="trip-add-btn" onclick="toggleAddTrip()" title="Add trip">+</button>
+    </div>
+
+    <!-- Inline add form -->
+    <div class="trip-add-form" id="trip-add-form">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:var(--c-faint);margin-bottom:8px">New trip</div>
+      <input class="trip-form-input" id="new-trip-name" placeholder="Name (required)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px">
+        <input class="trip-form-input" id="new-trip-start" type="date">
+        <input class="trip-form-input" id="new-trip-end"   type="date">
+      </div>
+      <input class="trip-form-input" id="new-trip-notes" placeholder="Notes" style="margin-top:5px">
+      <div style="display:flex;gap:5px;margin-top:8px">
+        <button class="trip-form-save" onclick="saveNewTrip()">Save</button>
+        <button class="trip-form-cancel" onclick="toggleAddTrip()">Cancel</button>
+      </div>
+      <div class="trip-form-err" id="trip-form-err"></div>
+    </div>
+
+    {% for t in trips %}
+    <div class="trip-item-wrap" id="trip-wrap-{{ t.id }}">
+      <a href="{{ url_for('trip_detail', trip_id=t.id) }}"
+         class="trip-item {% if trip_id == t.id %}active{% endif %}">
+        <div class="trip-item-name">{{ t.name }}</div>
+        <div class="trip-item-sub">{% if t.start_date %}{{ t.start_date[:7] }}{% else %}—{% endif %}</div>
+        <div class="trip-item-foot">
+          <span class="trip-item-total">{% if t.total_spend %}£{{ "{:,.0f}".format(t.total_spend) }}{% else %}—{% endif %}</span>
+          <span class="trip-item-txns">{{ t.txn_count }} txns</span>
+        </div>
+      </a>
+      <button class="trip-del-btn" onclick="deleteTrip({{ t.id }}, '{{ t.name|e }}', {{ t.txn_count }})" title="Remove trip">✕</button>
+    </div>
+    {% else %}
+    <div id="trips-empty-msg" style="padding:20px 16px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">No trips yet.</div>
+    {% endfor %}
+  </div>
+
+  <!-- Detail pane -->
+  <div class="trips-detail">
+    {% if trip %}
+    <div class="detail-inner">
+
+      <!-- Header -->
+      <div class="trip-hdr">
+        <div>
+          <div class="trip-name">{{ trip.name }}</div>
+          <div class="trip-dates">
+            {% if trip.start_date and trip.end_date %}{{ trip.start_date }} – {{ trip.end_date }}{% if days %} · {{ days }} days{% endif %}
+            {% elif trip.notes %}{{ trip.notes }}
+            {% else %}No dates set{% endif %}
+          </div>
+        </div>
+        <div class="trip-stats">
+          <div class="trip-stat">
+            <div class="trip-stat-label">Total spent</div>
+            <div class="trip-stat-lg">£{{ "{:,.0f}".format(total_spend) }}</div>
+          </div>
+          {% if avg_per_day is not none %}
+          <div class="trip-stat">
+            <div class="trip-stat-label">Avg / day</div>
+            <div class="trip-stat-sm">£{{ "{:,.0f}".format(avg_per_day) }}</div>
+          </div>
+          {% endif %}
+          {% if days %}
+          <div class="trip-stat">
+            <div class="trip-stat-label">Days</div>
+            <div class="trip-stat-sm">{{ days }}</div>
+          </div>
+          {% endif %}
+          <div class="trip-stat">
+            <div class="trip-stat-label">Transactions</div>
+            <div class="trip-stat-sm">{{ transactions|length }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Breakdown cards -->
+      <div class="breakdown-grid">
+        <!-- By account -->
+        <div class="card bk-card">
+          <div class="bk-title">Spend by account</div>
+          {% for row in by_account %}
+          <div class="bk-row">
+            <div class="bk-head">
+              <div class="bk-lbl">
+                <span class="bk-dot" style="background:{{ row.color }}"></span>
+                <span class="bk-name">{{ row.account_name }}</span>
+              </div>
+              <div class="bk-val"><strong>£{{ "{:,.0f}".format(row.reporting_spend or 0) }}</strong><em>{{ row.pct }}%</em></div>
+            </div>
+            <div class="bk-track" style="height:6px">
+              <div class="bk-fill" style="width:{{ row.bar_w }}%;background:{{ row.color }}"></div>
+            </div>
+            {% if row.native_spend and row.currency != 'GBP' %}
+            <div class="bk-native">{{ row.currency|ccy }}{{ row.native_spend|fmt }} {{ row.currency }}</div>
+            {% endif %}
+          </div>
+          {% else %}
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">No expense transactions.</div>
+          {% endfor %}
+        </div>
+        <!-- By category -->
+        <div class="card bk-card">
+          <div class="bk-title">Spend by category</div>
+          {% for row in by_category %}
+          <div class="bk-row" style="margin-bottom:11px">
+            <div class="bk-head">
+              <span class="bk-name">{{ row.category_name }}</span>
+              <div class="bk-val"><strong>£{{ "{:,.0f}".format(row.reporting_spend or 0) }}</strong><em>{{ row.pct }}%</em></div>
+            </div>
+            <div class="bk-track" style="height:5px">
+              <div class="bk-fill" style="width:{{ row.bar_w }}%;background:var(--c-amber);opacity:.7"></div>
+            </div>
+          </div>
+          {% else %}
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">No categorised expenses.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Daily timeline -->
+      {% if daily_bars %}
+      <div class="card tl-card">
+        <div class="tl-header">
+          <div class="tl-title">Daily spend timeline</div>
+          <span class="tl-legend">amber = peak day</span>
+        </div>
+        <div class="tl-bars">
+          {% for bar in daily_bars %}
+          <div class="tl-bar-col">
+            <div class="tl-bar"
+                 style="height:{{ bar.height_px }}px;background:{% if bar.is_peak %}var(--c-amber){% else %}var(--c-accent){% endif %};opacity:{% if bar.is_peak %}1{% else %}.7{% endif %}">
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Trip transactions -->
+      <div class="card tt-wrap">
+        <div class="tt-subhdr">
+          <span style="font-family:'Spectral',serif;font-size:14px;color:var(--c-text)">Transactions on this trip</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">{{ transactions|length }} total</span>
+        </div>
+        <div class="tt-header tt-cols">
+          <span>Date</span><span>Acct</span><span>Description</span>
+          <span>Category</span><span style="text-align:right">Native</span>
+          <span style="text-align:right">Settled</span><span style="text-align:right">Conf.</span>
+        </div>
+        {% for t in transactions %}
+        {% set is_fx = t.transaction_currency != t.settlement_currency %}
+        <div class="tt-row tt-cols txn-clickable {% if is_fx %}fx{% endif %}" onclick="openTxnModal({{ t.id }})">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-faint)">{{ t.transaction_date }}</span>
+          <span><span class="acct-chip" style="font-size:9px;padding:2px 5px">{{ t.account_name.split(' ')[-1][:8] }}</span></span>
+          <span style="font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px;color:var(--c-text)" title="click to edit">{{ t.description }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-text2)">{{ t.category_name or '—' }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--c-text)">{{ t.transaction_currency|ccy }}{{ t.transaction_amount|fmt }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--c-text2)">{% if is_fx %}{{ t.settlement_currency|ccy }}{{ t.settlement_amount|fmt }}{% else %}—{% endif %}</span>
+          <span style="text-align:right">
+            {% if t.confidence == 'high' %}<span class="conf-high">✓</span>
+            {% elif t.confidence == 'medium' %}<span class="conf-medium">med</span>
+            {% else %}<span class="conf-low">low</span>{% endif %}
+          </span>
+        </div>
+        {% else %}
+        <div style="padding:32px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-faint)">No transactions tagged to this trip yet.</div>
+        {% endfor %}
+      </div>
+
+    </div>
+    {% else %}
+    <div class="trips-empty">Select a trip from the sidebar.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function toggleAddTrip() {
+    const form = document.getElementById('trip-add-form');
+    const open = form.classList.toggle('open');
+    if (open) setTimeout(() => document.getElementById('new-trip-name').focus(), 50);
+  }
+
+  function saveNewTrip() {
+    const name  = document.getElementById('new-trip-name').value.trim();
+    const start = document.getElementById('new-trip-start').value;
+    const end   = document.getElementById('new-trip-end').value;
+    const notes = document.getElementById('new-trip-notes').value.trim();
+    const err   = document.getElementById('trip-form-err');
+
+    if (!name) {
+      err.textContent = 'Name is required.';
+      err.classList.add('show');
+      return;
+    }
+    err.classList.remove('show');
+
+    fetch('/api/trips/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, start_date: start || null, end_date: end || null, notes: notes || null}),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        window.location.href = '/trips/' + data.id;
+      } else {
+        err.textContent = data.error || 'Error saving trip.';
+        err.classList.add('show');
+      }
+    })
+    .catch(() => {
+      err.textContent = 'Network error.';
+      err.classList.add('show');
+    });
+  }
+
+  function deleteTrip(tripId, name, txnCount) {
+    const msg = txnCount > 0
+      ? `Delete "${name}"? The ${txnCount} tagged transaction(s) will be untagged.`
+      : `Delete trip "${name}"?`;
+    if (!confirm(msg)) return;
+
+    fetch(`/api/trips/${tripId}/delete`, {method: 'POST'})
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          const wrap = document.getElementById('trip-wrap-' + tripId);
+          if (wrap) wrap.remove();
+          // If we were viewing this trip, go back to /trips
+          if (window.location.pathname === '/trips/' + tripId) {
+            window.location.href = '/trips';
+          }
+        }
+      })
+      .catch(console.error);
+  }
+</script>
+{% endblock %}

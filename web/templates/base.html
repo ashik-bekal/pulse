@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Master Ledger{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ── Design tokens ── */
+    :root {
+      --c-bg:        #15120d; --c-card:      #1c1812; --c-nav:       #120f0a;
+      --c-border:    #2a241b; --c-border2:   #221e16; --c-subtle:    #1a1710;
+      --c-text:      #ece4d6; --c-text2:     #c8bba4; --c-muted:     #8a7f6b; --c-faint:     #7d735f;
+      --c-green:     #5fae77; --c-green-t:   #7ec698; --c-green-bg:  #14241a; --c-green-bd:  #2f5a3e;
+      --c-red:       #d2694f; --c-red-t:     #e89077; --c-red-bg:    #2a1611; --c-red-bd:    #5e342a;
+      --c-amber:     #d6a23f; --c-amber-t:   #e0b860; --c-amber-bg:  #3a2c14; --c-amber-bd:  #5a451e;
+      --c-accent:    #6a9bf0; --c-accent-bg: #1a2640; --c-accent-bd: #2c3c5a;
+    }
+    [data-theme="light"] {
+      --c-bg:        #faf7f2; --c-card:      #ffffff; --c-nav:       #f2ede4;
+      --c-border:    #d8d0be; --c-border2:   #e4ddd0; --c-subtle:    #f5f1ea;
+      --c-text:      #1c1812; --c-text2:     #3d3629; --c-muted:     #6b5f4a; --c-faint:     #8a7b63;
+      --c-green:     #2b8c4e; --c-green-t:   #1f7040; --c-green-bg:  #e8f5ee; --c-green-bd:  #b4dfc4;
+      --c-red:       #c4402a; --c-red-t:     #a33220; --c-red-bg:    #fdf0ee; --c-red-bd:    #e8b4a8;
+      --c-amber:     #b07a18; --c-amber-t:   #8a5e0e; --c-amber-bg:  #fef3dc; --c-amber-bd:  #e8c97a;
+      --c-accent:    #2965cc; --c-accent-bg: #eaf0fc; --c-accent-bd: #b4ccf0;
+    }
+
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(150,130,100,.3); border-radius: 3px; }
+
+    /* ── Base ── */
+    html { background: var(--c-bg); }
+    body {
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      background: var(--c-bg);
+      color: var(--c-text);
+      min-height: 100vh;
+    }
+    button, input, select { font-family: inherit; }
+    input:focus, select:focus {
+      outline: 2px solid var(--c-accent);
+      outline-offset: -1px;
+      border-color: transparent !important;
+    }
+    select { font-family: 'IBM Plex Mono', monospace; cursor: pointer; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ── Nav ── */
+    .nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 50px;
+      background: var(--c-nav);
+      border-bottom: 1px solid var(--c-border);
+    }
+    .nav-left  { display: flex; align-items: center; gap: 20px; }
+    .nav-right { display: flex; align-items: center; gap: 10px; }
+    .nav-brand {
+      font-family: 'Spectral', serif;
+      font-weight: 600; font-size: 18px;
+      letter-spacing: .01em;
+      color: var(--c-text);
+      white-space: nowrap;
+    }
+    .nav-tabs  { display: flex; align-items: stretch; height: 50px; }
+    .nav-tab {
+      background: transparent; border: none;
+      border-bottom: 2px solid transparent;
+      border-top: 2px solid transparent;
+      color: var(--c-muted);
+      font-size: 12.5px; font-weight: 400;
+      padding: 0 14px; cursor: pointer;
+      white-space: nowrap;
+      display: flex; align-items: center; gap: 7px;
+      text-decoration: none;
+    }
+    .nav-tab.active {
+      border-bottom-color: var(--c-accent);
+      color: var(--c-text);
+      font-weight: 600;
+    }
+    .nav-tab:hover:not(.active) { color: var(--c-text2); }
+    .nav-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      background: var(--c-amber-bg);
+      color: var(--c-amber-t);
+      border: 1px solid var(--c-amber-bd);
+      border-radius: 8px;
+      padding: 1px 6px;
+      line-height: 1.4;
+    }
+    .nav-rpt {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10.5px;
+      color: var(--c-faint);
+      border: 1px solid var(--c-border);
+      border-radius: 3px;
+      padding: 4px 9px;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--c-accent); color: #080a10;
+      border: none; border-radius: 3px;
+      padding: 7px 13px; font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+    }
+    .btn-theme {
+      width: 32px; height: 32px;
+      border: 1px solid var(--c-border); border-radius: 3px;
+      background: transparent; color: var(--c-muted);
+      font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Import modal ── */
+    .imp-overlay {
+      display: none; position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,.6); align-items: center; justify-content: center;
+    }
+    .imp-overlay.open { display: flex; }
+    .imp-modal {
+      background: var(--c-card); border: 1px solid var(--c-border);
+      border-radius: 4px; padding: 22px 24px;
+      width: 560px; max-width: 96vw;
+      max-height: 90vh; display: flex; flex-direction: column;
+    }
+    .imp-modal-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 16px; flex-shrink: 0;
+    }
+    .imp-title {
+      font-family: 'Spectral', serif; font-size: 18px; font-weight: 600; color: var(--c-text);
+    }
+    .imp-close {
+      background: transparent; border: none; color: var(--c-faint);
+      font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .imp-close:hover { color: var(--c-text); }
+
+    /* Drop zone */
+    .imp-dropzone {
+      border: 2px dashed var(--c-border); border-radius: 3px;
+      padding: 20px; text-align: center; cursor: pointer;
+      transition: border-color .15s, background .15s;
+      flex-shrink: 0;
+    }
+    .imp-dropzone:hover, .imp-dropzone.drag-over {
+      border-color: var(--c-accent); background: var(--c-accent-bg);
+    }
+    .imp-dropzone-icon { font-size: 24px; color: var(--c-faint); }
+    .imp-dropzone-text {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      color: var(--c-faint); margin-top: 6px;
+    }
+    .imp-dropzone-text span { color: var(--c-accent); cursor: pointer; }
+
+    /* File card list */
+    .imp-file-list {
+      margin-top: 12px; overflow-y: auto; flex: 1;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .imp-file-card {
+      background: var(--c-subtle); border: 1px solid var(--c-border);
+      border-radius: 3px; padding: 10px 12px;
+    }
+    .imp-file-card.state-done    { border-color: var(--c-green-bd); background: var(--c-green-bg); }
+    .imp-file-card.state-warn    { border-color: var(--c-amber-bd); background: var(--c-amber-bg); }
+    .imp-file-card.state-error   { border-color: var(--c-red-bd);   background: var(--c-red-bg);   }
+    .imp-file-card.state-running { border-color: var(--c-accent-bd);}
+
+    .fc-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .fc-filename {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      color: var(--c-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 380px;
+    }
+    .fc-remove {
+      background: transparent; border: none; color: var(--c-faint);
+      cursor: pointer; font-size: 13px; padding: 0 2px; flex-shrink: 0;
+    }
+    .fc-remove:hover { color: var(--c-red-t); }
+
+    .fc-status {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-faint);
+    }
+    .fc-status.ok   { color: var(--c-green-t); }
+    .fc-status.err  { color: var(--c-red-t); }
+    .fc-status.run  { color: var(--c-accent); }
+    .fc-status.warn { color: var(--c-amber-t); }
+
+    /* Detection form inside card */
+    .fc-form { margin-top: 6px; }
+    .fc-field-row { display: grid; grid-template-columns: 1fr 80px 70px; gap: 6px; align-items: end; }
+    .fc-label {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+      text-transform: uppercase; letter-spacing: .06em; color: var(--c-faint);
+      display: block; margin-bottom: 3px;
+    }
+    .fc-select, .fc-input {
+      width: 100%; background: var(--c-card); border: 1px solid var(--c-border);
+      color: var(--c-text); border-radius: 2px; padding: 5px 7px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    }
+    .fc-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 8px;
+    }
+    .fc-notes {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: var(--c-faint);
+    }
+    .fc-conf-badge { font-family:'IBM Plex Mono',monospace; font-size:9.5px; padding:2px 6px; border-radius:2px; }
+    .fc-conf-high   { background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); }
+    .fc-conf-medium { background:var(--c-amber-bg); color:var(--c-amber-t); border:1px solid var(--c-amber-bd); }
+    .fc-conf-low    { background:var(--c-red-bg);   color:var(--c-red-t);   border:1px solid var(--c-red-bd);   }
+    .fc-import-btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 500;
+      background: var(--c-accent); color: #080a10;
+      border: none; border-radius: 2px; padding: 5px 12px; cursor: pointer;
+      flex-shrink: 0;
+    }
+    .fc-import-btn:hover { opacity: .85; }
+
+    /* Modal footer */
+    .imp-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 14px; padding-top: 12px;
+      border-top: 1px solid var(--c-border); flex-shrink: 0;
+    }
+    .imp-import-all {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+      background: var(--c-accent); color: #080a10;
+      border: none; border-radius: 3px; padding: 7px 16px; cursor: pointer;
+    }
+    .imp-import-all:disabled { opacity: .4; cursor: default; }
+    .imp-modal-close {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      background: transparent; border: 1px solid var(--c-border);
+      color: var(--c-muted); border-radius: 3px; padding: 7px 14px; cursor: pointer;
+    }
+
+    /* ── Shared transaction edit modal ── */
+    .txm-overlay {
+      display: none; position: fixed; inset: 0; z-index: 600;
+      background: rgba(0,0,0,.6); align-items: center; justify-content: center;
+    }
+    .txm-overlay.open { display: flex; }
+    .txm-modal {
+      background: var(--c-card); border: 1px solid var(--c-border);
+      border-radius: 4px; padding: 22px 24px;
+      width: 460px; max-width: 94vw;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .txm-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+    .txm-title { font-family: 'Spectral', serif; font-size: 17px; font-weight: 600; color: var(--c-text); }
+    .txm-close { background: transparent; border: none; color: var(--c-faint); font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
+    .txm-close:hover { color: var(--c-text); }
+
+    .txm-readonly { background: var(--c-subtle); border: 1px solid var(--c-border2); border-radius: 3px; padding: 12px 14px; margin-bottom: 16px; }
+    .txm-ro-row { display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 0; }
+    .txm-ro-label { color: var(--c-faint); }
+    .txm-ro-val { color: var(--c-text2); text-align: right; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .txm-ro-desc { color: var(--c-text); font-weight: 500; }
+
+    .txm-field { margin-bottom: 14px; }
+    .txm-label { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--c-faint); display: block; margin-bottom: 5px; }
+    .txm-select {
+      width: 100%; background: var(--c-subtle); border: 1px solid var(--c-border);
+      color: var(--c-text); border-radius: 2px; padding: 8px 10px; font-size: 12.5px;
+    }
+    .txm-mtype-btns { display: flex; gap: 5px; }
+    .txm-mtype-btn { flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; padding: 7px 0; border-radius: 2px; cursor: pointer; border: 1px solid; transition: opacity .15s; }
+    .txm-mtype-btn.exp   { background: var(--c-red-bg);    color: var(--c-red-t);   border-color: var(--c-red-bd);   }
+    .txm-mtype-btn.inc   { background: var(--c-green-bg);  color: var(--c-green-t); border-color: var(--c-green-bd); }
+    .txm-mtype-btn.reimb { background: var(--c-accent-bg); color: var(--c-accent);  border-color: var(--c-accent-bd);}
+    .txm-mtype-btn.trf   { background: var(--c-subtle);    color: var(--c-muted);   border-color: var(--c-border);   }
+    .txm-mtype-btn.selected { opacity: 1; filter: brightness(1.3); outline: 2px solid var(--c-accent); outline-offset: 1px; }
+    .txm-mtype-btn:not(.selected) { opacity: .55; }
+
+    .txm-actions { display: flex; gap: 8px; margin-top: 6px; }
+    .txm-save { flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; background: var(--c-accent); color: #080a10; border: none; border-radius: 3px; padding: 9px 0; cursor: pointer; }
+    .txm-cancel { font-family: 'IBM Plex Mono', monospace; font-size: 12px; background: transparent; border: 1px solid var(--c-border); color: var(--c-muted); border-radius: 3px; padding: 9px 16px; cursor: pointer; }
+    .txm-error { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--c-red-t); margin-top: 8px; }
+
+    /* Clickable transaction rows, used across Transactions/Analysis/Trip pages */
+    .txn-clickable { cursor: pointer; }
+    .txn-clickable:hover { background: var(--c-accent-bg) !important; }
+
+    /* ── Shared card ── */
+    .card {
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      border-radius: 3px;
+    }
+
+    /* ── Shared filter select ── */
+    .filter-sel {
+      font-size: 11px;
+      background: var(--c-card);
+      border: 1px solid var(--c-border);
+      color: var(--c-text);
+      border-radius: 3px;
+      padding: 6px 10px;
+    }
+
+    /* ── Table grid rows shared ── */
+    .tbl-header {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--c-border);
+      background: var(--c-subtle);
+    }
+    .tbl-header span {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9.5px; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--c-faint);
+    }
+    .tbl-row {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--c-border2);
+      align-items: center;
+    }
+
+    /* ── Account chip ── */
+    .acct-chip {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9.5px;
+      background: #1a2640; color: #6a9bf0;
+      padding: 2px 6px; border-radius: 2px;
+      white-space: nowrap; display: inline-block;
+    }
+
+    /* ── Confidence badge ── */
+    .conf-high   { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-green-t); }
+    .conf-medium { font-family:'IBM Plex Mono',monospace; font-size:9.5px; background:var(--c-amber-bg); color:var(--c-amber-t); border:1px solid var(--c-amber-bd); padding:2px 5px; border-radius:2px; }
+    .conf-low    { font-family:'IBM Plex Mono',monospace; font-size:9.5px; background:var(--c-red-bg);   color:var(--c-red-t);   border:1px solid var(--c-red-bd);   padding:2px 5px; border-radius:2px; }
+    .conf-high-full { font-family:'IBM Plex Mono',monospace; font-size:9.5px; background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); padding:2px 5px; border-radius:2px; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-left">
+    <span class="nav-brand">Master Ledger</span>
+    <div class="nav-tabs">
+      <a href="{{ url_for('dashboard') }}"
+         class="nav-tab {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('transactions') }}"
+         class="nav-tab {% if request.endpoint == 'transactions' %}active{% endif %}">Transactions</a>
+      <a href="{{ url_for('analysis') }}"
+         class="nav-tab {% if request.endpoint == 'analysis' %}active{% endif %}">Analysis</a>
+      <a href="{{ url_for('trips_view') }}"
+         class="nav-tab {% if request.endpoint in ('trips_view','trip_detail') %}active{% endif %}">Trips</a>
+      <a href="{{ url_for('review_queue_view') }}"
+         class="nav-tab {% if request.endpoint == 'review_queue_view' %}active{% endif %}">
+        Review Queue
+        {% if nav_review_count > 0 %}
+          <span class="nav-badge" id="nav-review-badge">{{ nav_review_count }}</span>
+        {% endif %}
+      </a>
+      <a href="{{ url_for('categories_view') }}"
+         class="nav-tab {% if request.endpoint in ('categories_view','add_category','delete_category') %}active{% endif %}">Categories</a>
+      <a href="{{ url_for('accounts_view') }}"
+         class="nav-tab {% if request.endpoint in ('accounts_view','add_account','deactivate_account') %}active{% endif %}">Accounts</a>
+      <a href="{{ url_for('vendor_rules_view') }}"
+         class="nav-tab {% if request.endpoint in ('vendor_rules_view','add_vendor_rule','delete_vendor_rule') %}active{% endif %}">Vendor Rules</a>
+    </div>
+  </div>
+  <div class="nav-right">
+    <span class="nav-rpt">RPT · GBP</span>
+    <button class="btn-primary" onclick="document.getElementById('imp-overlay').classList.add('open')">↧ Import</button>
+    <button class="btn-theme" id="theme-toggle" title="Toggle theme">☀</button>
+  </div>
+</nav>
+
+{% block content %}{% endblock %}
+
+<!-- ── Import modal ── -->
+<div class="imp-overlay" id="imp-overlay" onclick="if(event.target===this)closeImport()">
+  <div class="imp-modal">
+    <div class="imp-modal-head">
+      <span class="imp-title">↧ Import statements</span>
+      <button class="imp-close" onclick="closeImport()">✕</button>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="imp-dropzone" id="imp-dropzone"
+         onclick="document.getElementById('imp-file-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="event.preventDefault();this.classList.remove('drag-over');handleFiles(event.dataTransfer.files)">
+      <div class="imp-dropzone-icon">↧</div>
+      <div class="imp-dropzone-text">Drop PDF statements here or <span>click to browse</span></div>
+    </div>
+    <input type="file" id="imp-file-input" accept=".pdf" multiple style="display:none"
+           onchange="handleFiles(this.files)">
+
+    <!-- File cards -->
+    <div class="imp-file-list" id="imp-file-list"></div>
+
+    <!-- Footer -->
+    <div class="imp-footer" style="justify-content:space-between">
+      <a href="/reset-data" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-red-t);opacity:.7;align-self:center" title="Delete all imported transactions and start fresh">⚠ Reset imported data</a>
+      <div style="display:flex;gap:8px">
+        <button class="imp-import-all" id="imp-import-all" onclick="importAll()" disabled>↧ Import all</button>
+        <button class="imp-modal-close" onclick="closeImport()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shared transaction edit modal — opened from Transactions, Analysis
+     drill-down, and Trip detail. Category/Money type/Trip are editable;
+     everything else is shown read-only since it comes from the source
+     statement and shouldn't be rewritten from the app. -->
+<div class="txm-overlay" id="txm-overlay" onclick="if(event.target===this)closeTxnModal()">
+  <div class="txm-modal">
+    <div class="txm-head">
+      <span class="txm-title">Edit transaction</span>
+      <button class="txm-close" onclick="closeTxnModal()">✕</button>
+    </div>
+
+    <div class="txm-readonly" id="txm-readonly">
+      <!-- populated by JS -->
+    </div>
+
+    <div class="txm-field">
+      <label class="txm-label">Category</label>
+      <select class="txm-select" id="txm-category"></select>
+    </div>
+
+    <div class="txm-field">
+      <label class="txm-label">Money type</label>
+      <div class="txm-mtype-btns" id="txm-mtype-btns">
+        <button type="button" class="txm-mtype-btn exp"   onclick="setTxmMtype('expense', this)">Exp</button>
+        <button type="button" class="txm-mtype-btn inc"   onclick="setTxmMtype('income', this)">Inc</button>
+        <button type="button" class="txm-mtype-btn reimb" onclick="setTxmMtype('reimbursement', this)">Reimb</button>
+        <button type="button" class="txm-mtype-btn trf"   onclick="setTxmMtype('transfer', this)">Trf</button>
+      </div>
+    </div>
+
+    <div class="txm-field">
+      <label class="txm-label">Trip</label>
+      <select class="txm-select" id="txm-trip">
+        <option value="">— no trip —</option>
+      </select>
+    </div>
+
+    <div class="txm-actions">
+      <button class="txm-save" onclick="saveTxnModal()">Save changes</button>
+      <button class="txm-cancel" onclick="closeTxnModal()">Cancel</button>
+    </div>
+    <div class="txm-error" id="txm-error" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+  // ── Theme toggle ──
+  (function() {
+    const root = document.documentElement;
+    const btn  = document.getElementById('theme-toggle');
+    const saved = localStorage.getItem('ledger_theme') || 'dark';
+    root.setAttribute('data-theme', saved);
+    btn.textContent = saved === 'dark' ? '☀' : '☾';
+    btn.addEventListener('click', function() {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('ledger_theme', next);
+      btn.textContent = next === 'dark' ? '☀' : '☾';
+    });
+  })();
+
+  // ── Import modal ──────────────────────────────────────────────────────────
+  // cards[fileId] = { state, tempId, filename, element }
+  const cards = {};
+  let pollTimer = null;
+
+  const FORMAT_LABELS = { hsbc: 'HSBC UK', chase_bank: 'Chase Checking / Savings', sapphire: 'Chase Sapphire Reserve' };
+
+  // Fetched once and cached — every card's account dropdown reads from this
+  // instead of each card making its own round-trip.
+  let allAccountsCache = null;
+  let allAccountsPromise = null;
+  function ensureAccountsLoaded() {
+    if (allAccountsCache) return Promise.resolve(allAccountsCache);
+    if (!allAccountsPromise) {
+      allAccountsPromise = fetch('/api/import/all-accounts').then(r => r.json()).then(accounts => {
+        allAccountsCache = accounts;
+        return accounts;
+      });
+    }
+    return allAccountsPromise;
+  }
+
+  function populateAccountSelect(id) {
+    return ensureAccountsLoaded().then(accounts => {
+      const select = document.getElementById('fc-acct-' + id);
+      if (!select) return;
+      const byFormat = {};
+      for (const a of accounts) (byFormat[a.format] = byFormat[a.format] || []).push(a);
+
+      let html = '<option value="">— select account —</option>';
+      for (const [fmt, group] of Object.entries(byFormat)) {
+        html += `<optgroup label="${esc(FORMAT_LABELS[fmt] || fmt)}">`;
+        for (const a of group) html += `<option value="${a.id}">${esc(a.name)}</option>`;
+        html += '</optgroup>';
+      }
+      select.innerHTML = html;
+    });
+  }
+
+  function closeImport() {
+    document.getElementById('imp-overlay').classList.remove('open');
+  }
+
+  function openImport() {
+    document.getElementById('imp-overlay').classList.add('open');
+  }
+  document.getElementById('imp-overlay')
+    .previousElementSibling; // nav — keep button wired via onclick attr
+
+  function handleFiles(fileList) {
+    for (const file of fileList) {
+      if (!file.name.endsWith('.pdf')) continue;
+      const id = Math.random().toString(36).slice(2);
+      const el = buildCard(id, file.name);
+      cards[id] = { state: 'detecting', filename: file.name, tempId: null, element: el };
+      populateAccountSelect(id);
+      detectFile(id, file);
+    }
+    syncImportAll();
+  }
+
+  function buildCard(id, filename) {
+    const el = document.createElement('div');
+    el.className = 'imp-file-card';
+    el.id = 'fc-' + id;
+    el.innerHTML = `
+      <div class="fc-head">
+        <span class="fc-filename" title="${esc(filename)}">${esc(filename)}</span>
+        <button class="fc-remove" onclick="removeCard('${id}')">✕</button>
+      </div>
+      <div class="fc-status run" id="fcs-${id}">⟳ Analysing…</div>
+      <div class="fc-form" id="fcf-${id}" style="display:none">
+        <div class="fc-field-row">
+          <div>
+            <label class="fc-label">Account</label>
+            <select class="fc-select" id="fc-acct-${id}">
+              <option value="">— select account —</option>
+            </select>
+          </div>
+          <div>
+            <label class="fc-label">Year</label>
+            <input class="fc-input" id="fc-year-${id}" type="number" placeholder="YYYY" style="width:100%" oninput="updatePeriod('${id}')">
+          </div>
+          <div>
+            <label class="fc-label">Month</label>
+            <input class="fc-input" id="fc-month-${id}" type="number" min="1" max="12" placeholder="1–12" style="width:100%" oninput="updatePeriod('${id}')">
+          </div>
+        </div>
+        <div class="fc-period" id="fc-period-${id}" style="font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--c-amber-t);margin-top:5px;display:none"></div>
+        <div class="fc-meta">
+          <span class="fc-notes" id="fc-notes-${id}"></span>
+          <button class="fc-import-btn" onclick="importCard('${id}')">↧ Import</button>
+        </div>
+      </div>`;
+    document.getElementById('imp-file-list').appendChild(el);
+    return el;
+  }
+
+  function detectFile(id, file) {
+    const fd = new FormData();
+    fd.append('pdf', file);
+    fetch('/api/import/detect', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (!cards[id]) return;
+        cards[id].tempId = data.temp_id;
+        cards[id].state  = 'detected';
+
+        // Pre-fill period fields
+        if (data.year)        document.getElementById('fc-year-' + id).value  = data.year;
+        if (data.start_month) document.getElementById('fc-month-' + id).value = data.start_month;
+        updatePeriod(id);
+
+        // Pre-select the account: prefer an exact account-number match (best —
+        // works even when several accounts share the same statement format),
+        // otherwise fall back to the one account for that format if it's the
+        // only candidate, otherwise leave it for the user to pick.
+        ensureAccountsLoaded().then(accounts => {
+          const select = document.getElementById('fc-acct-' + id);
+          if (!select) return;
+          if (data.matched_account_id) {
+            select.value = String(data.matched_account_id);
+          } else if (data.account_type) {
+            const candidates = accounts.filter(a => a.format === data.account_type);
+            if (candidates.length === 1) select.value = String(candidates[0].id);
+          }
+        });
+
+        const confClass = data.confidence === 'high' ? 'fc-conf-high'
+                        : data.confidence === 'medium' ? 'fc-conf-medium' : 'fc-conf-low';
+        const confLabel = data.confidence || 'low';
+        const notesEl   = document.getElementById('fc-notes-' + id);
+        notesEl.innerHTML = data.account_type
+          ? `<span class="fc-conf-badge ${confClass}">${confLabel}</span> ${esc(data.notes || '')}`
+          : `<span class="fc-conf-badge fc-conf-low">unrecognised</span> ${esc(data.notes || '')}`;
+
+        setStatus(id, '', '');
+        document.getElementById('fcf-' + id).style.display = 'block';
+        syncImportAll();
+      })
+      .catch(err => setStatus(id, `Detection failed: ${err.message}`, 'err'));
+  }
+
+  function importCard(id) {
+    const card = cards[id];
+    if (!card || !card.tempId) return;
+    const acctSelect = document.getElementById('fc-acct-' + id);
+    const targetAccountId = acctSelect.value ? parseInt(acctSelect.value) : null;
+    const year      = parseInt(document.getElementById('fc-year-' + id).value) || null;
+    const startMonth = parseInt(document.getElementById('fc-month-' + id).value) || null;
+
+    if (!targetAccountId) {
+      setStatus(id, '⚠ Select an account before importing — detection could not identify this statement', 'warn');
+      return;
+    }
+    const acctType = (allAccountsCache || []).find(a => a.id === targetAccountId)?.format;
+    if (!acctType) {
+      setStatus(id, '✗ Could not resolve the selected account\'s statement format — try re-opening the import screen', 'err');
+      return;
+    }
+
+    setStatus(id, '⟳ Queuing…', 'run');
+    document.getElementById('fcf-' + id).style.display = 'none';
+
+    fetch('/api/import/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        temp_id: card.tempId, filename: card.filename,
+        account_type: acctType, year, start_month: startMonth,
+        target_account_id: targetAccountId,
+      }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        cards[id].state  = 'running';
+        cards[id].jobId  = data.job_id;
+        setStatus(id, '⟳ Importing in background…', 'run');
+        cards[id].element.classList.add('state-running');
+        startPolling();
+      } else {
+        setStatus(id, '✗ ' + (data.error || 'Queue failed'), 'err');
+        document.getElementById('fcf-' + id).style.display = 'block';
+      }
+    })
+    .catch(err => {
+      setStatus(id, `✗ ${err.message}`, 'err');
+      document.getElementById('fcf-' + id).style.display = 'block';
+    });
+  }
+
+  function importAll() {
+    for (const id of Object.keys(cards)) {
+      if (cards[id].state === 'detected') importCard(id);
+    }
+  }
+  // Note: importCard() itself now blocks (with a warning) any card whose
+  // account type is still unselected, so importAll() can't silently
+  // misfile an unrecognised statement under whatever option happens to be
+  // first in the dropdown.
+
+  function removeCard(id) {
+    const el = document.getElementById('fc-' + id);
+    if (el) el.remove();
+    delete cards[id];
+    syncImportAll();
+  }
+
+  function syncImportAll() {
+    const hasDetected = Object.values(cards).some(c => c.state === 'detected');
+    document.getElementById('imp-import-all').disabled = !hasDetected;
+  }
+
+  function setStatus(id, msg, cls) {
+    const el = document.getElementById('fcs-' + id);
+    if (!el) return;
+    el.textContent = msg;
+    el.className   = 'fc-status' + (cls ? ' ' + cls : '');
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollJobs, 2500);
+  }
+
+  function pollJobs() {
+    const running = Object.values(cards).filter(c => c.state === 'running' && c.jobId);
+    if (!running.length) { clearInterval(pollTimer); pollTimer = null; return; }
+
+    fetch('/api/import/jobs')
+      .then(r => r.json())
+      .then(jobs => {
+        for (const [id, card] of Object.entries(cards)) {
+          if (card.state !== 'running' || !card.jobId) continue;
+          const job = jobs[card.jobId];
+          if (!job) continue;
+          if (job.status === 'done') {
+            const skippedNote = job.skipped ? `, ${job.skipped} duplicate${job.skipped !== 1 ? 's' : ''} skipped` : '';
+            const baseMsg = `${job.inserted} new transaction${job.inserted !== 1 ? 's' : ''} imported${skippedNote}`;
+            card.element.classList.remove('state-running');
+            if (job.reconciled === false) {
+              cards[id].state = 'warn';
+              const diffNote = job.diff ? ` (gap: ${Math.abs(job.diff).toFixed(2)})` : ' (opening balance unverified)';
+              setStatus(id, `⚠ Imported, reconciliation gap${diffNote} — ${baseMsg}`, 'warn');
+              card.element.classList.add('state-warn');
+            } else {
+              cards[id].state = 'done';
+              setStatus(id, `✓ Done — ${baseMsg}`, 'ok');
+              card.element.classList.add('state-done');
+            }
+          } else if (job.status === 'error') {
+            cards[id].state = 'error';
+            setStatus(id, '✗ ' + (job.error || 'Import failed'), 'err');
+            card.element.classList.remove('state-running');
+            card.element.classList.add('state-error');
+          }
+        }
+        syncImportAll();
+      })
+      .catch(() => {}); // silent — next tick will retry
+  }
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function updatePeriod(id) {
+    const year  = parseInt(document.getElementById('fc-year-'  + id).value);
+    const month = parseInt(document.getElementById('fc-month-' + id).value);
+    const el    = document.getElementById('fc-period-' + id);
+    if (!el) return;
+    if (!year || !month || month < 1 || month > 12) { el.style.display = 'none'; return; }
+    // Transactions in months >= start_month get statement_year; months < start_month get year+1
+    const endMonth = month === 1 ? 12 : month - 1;
+    const endYear  = month === 1 ? year : year + 1;
+    const startLabel = MONTH_NAMES[month - 1] + ' ' + year;
+    const endLabel   = MONTH_NAMES[endMonth - 1] + ' ' + endYear;
+    el.textContent = `Period: ${startLabel} – ${endLabel}`;
+    el.style.display = 'block';
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Shared transaction edit modal ───────────────────────────────────────────
+  // One implementation backs Transactions, Analysis drill-down, and Trip
+  // detail — clicking a transaction row on any of those pages calls
+  // openTxnModal(id). Category/trip lists are fetched once and cached since
+  // they're identical regardless of which page opened the modal.
+  let txmCategoriesCache = null;
+  let txmTripsCache = null;
+  let txmCurrentId = null;
+  let txmMtype = null;
+
+  function txmEnsureLists() {
+    const catP = txmCategoriesCache ? Promise.resolve(txmCategoriesCache)
+      : fetch('/api/categories/list').then(r => r.json()).then(d => txmCategoriesCache = d);
+    const tripP = txmTripsCache ? Promise.resolve(txmTripsCache)
+      : fetch('/api/trips/list').then(r => r.json()).then(d => txmTripsCache = d);
+    return Promise.all([catP, tripP]);
+  }
+
+  function openTxnModal(id) {
+    txmCurrentId = id;
+    document.getElementById('txm-error').style.display = 'none';
+    Promise.all([
+      fetch('/api/transactions/' + id).then(r => r.json()),
+      txmEnsureLists(),
+    ]).then(([resp]) => {
+      if (!resp.ok) { alert(resp.error || 'Could not load transaction'); return; }
+      const t = resp.transaction;
+
+      const isFx = t.transaction_currency !== t.settlement_currency;
+      document.getElementById('txm-readonly').innerHTML = `
+        <div class="txm-ro-row"><span class="txm-ro-label">Date</span><span class="txm-ro-val">${esc(t.transaction_date)}</span></div>
+        <div class="txm-ro-row"><span class="txm-ro-label">Description</span><span class="txm-ro-val txm-ro-desc" title="${esc(t.description)}">${esc(t.description)}</span></div>
+        <div class="txm-ro-row"><span class="txm-ro-label">Account</span><span class="txm-ro-val">${esc(t.account_name || '')}</span></div>
+        <div class="txm-ro-row"><span class="txm-ro-label">Native</span><span class="txm-ro-val">${esc(t.transaction_currency)} ${Number(t.transaction_amount).toFixed(2)}</span></div>
+        ${isFx ? `<div class="txm-ro-row"><span class="txm-ro-label">Settled</span><span class="txm-ro-val">${esc(t.settlement_currency)} ${Number(t.settlement_amount).toFixed(2)}</span></div>` : ''}
+        <div class="txm-ro-row"><span class="txm-ro-label">Reporting (GBP)</span><span class="txm-ro-val">£${Number(t.reporting_amount).toFixed(2)}</span></div>
+        <div class="txm-ro-row"><span class="txm-ro-label">Confidence</span><span class="txm-ro-val">${esc(t.confidence)}</span></div>
+        <div class="txm-ro-row"><span class="txm-ro-label">Source statement</span><span class="txm-ro-val" title="${esc(t.source_statement || '')}">${esc(t.source_statement || '—')}</span></div>
+      `;
+
+      const catSel = document.getElementById('txm-category');
+      catSel.innerHTML = '<option value="">— no category —</option>' +
+        txmCategoriesCache.map(c => `<option value="${c.id}" ${c.id === t.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+
+      const tripSel = document.getElementById('txm-trip');
+      tripSel.innerHTML = '<option value="">— no trip —</option>' +
+        txmTripsCache.map(tr => `<option value="${tr.id}" ${tr.id === t.trip_id ? 'selected' : ''}>${esc(tr.name)}</option>`).join('');
+
+      txmMtype = t.money_type;
+      document.querySelectorAll('#txm-mtype-btns .txm-mtype-btn').forEach(b => b.classList.remove('selected'));
+      const cls = {expense:'exp', income:'inc', reimbursement:'reimb', transfer:'trf'}[t.money_type];
+      if (cls) document.querySelector('#txm-mtype-btns .' + cls).classList.add('selected');
+
+      document.getElementById('txm-overlay').classList.add('open');
+    }).catch(err => alert('Failed to load transaction: ' + err.message));
+  }
+
+  function closeTxnModal() {
+    document.getElementById('txm-overlay').classList.remove('open');
+    txmCurrentId = null;
+  }
+
+  function setTxmMtype(mtype, btn) {
+    txmMtype = mtype;
+    document.querySelectorAll('#txm-mtype-btns .txm-mtype-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  }
+
+  function saveTxnModal() {
+    if (!txmCurrentId) return;
+    const categoryId = document.getElementById('txm-category').value || null;
+    const tripId = document.getElementById('txm-trip').value || null;
+    fetch(`/api/transactions/${txmCurrentId}/edit`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({category_id: categoryId, money_type: txmMtype, trip_id: tripId}),
+    }).then(r => r.json()).then(data => {
+      if (!data.ok) {
+        const errEl = document.getElementById('txm-error');
+        errEl.textContent = data.error || 'Save failed';
+        errEl.style.display = 'block';
+        return;
+      }
+      // Simplest correct option: reload so every page's own rendering of
+      // category chips / money-type badges / trip tags stays in sync
+      // without needing three separate DOM-patch implementations.
+      window.location.reload();
+    }).catch(err => {
+      const errEl = document.getElementById('txm-error');
+      errEl.textContent = 'Save failed: ' + err.message;
+      errEl.style.display = 'block';
+    });
+  }
+</script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

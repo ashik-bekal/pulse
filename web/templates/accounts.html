@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Accounts — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .accts-wrap { padding: 28px 24px; max-width: 900px; margin: 0 auto; }
+  .accts-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .accts-title { font-family:'Spectral',serif; font-size:22px; font-weight:600; }
+
+  /* Add form */
+  .add-form-wrap { background:var(--c-card); border:1px solid var(--c-border); border-radius:3px; padding:16px 18px; margin-bottom:20px; }
+  .add-form-grid { display:grid; grid-template-columns:110px 1fr 1fr 90px 90px 80px; gap:8px; align-items:end; margin-bottom:10px; }
+  .add-form-row2 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; align-items:end; }
+  .af-label { font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--c-faint); display:block; margin-bottom:3px; }
+  .af-input, .af-select {
+    width:100%; background:var(--c-subtle); border:1px solid var(--c-border);
+    color:var(--c-text); border-radius:2px; padding:6px 8px;
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+  }
+  .af-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+  .af-save { background:var(--c-accent); color:#080a10; border:none; border-radius:3px; padding:7px 16px; font-size:12px; font-weight:600; cursor:pointer; }
+  .af-cancel { background:transparent; border:1px solid var(--c-border); color:var(--c-muted); border-radius:3px; padding:7px 12px; font-size:12px; cursor:pointer; }
+
+  /* Table */
+  .accts-table { background:var(--c-card); border:1px solid var(--c-border); border-radius:3px; overflow:hidden; }
+  .accts-thead { display:grid; grid-template-columns:120px 1fr 90px 70px 70px 70px 110px 90px 80px; padding:9px 14px; border-bottom:1px solid var(--c-border); background:var(--c-subtle); }
+  .accts-thead span { font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--c-faint); }
+  .accts-row { display:grid; grid-template-columns:120px 1fr 90px 70px 70px 70px 110px 90px 80px; padding:10px 14px; border-bottom:1px solid var(--c-border2); align-items:center; }
+  .accts-row:last-child { border-bottom:none; }
+
+  /* Inline opening-balance edit */
+  .ob-display { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); cursor:pointer; }
+  .ob-display:hover { color:var(--c-accent); }
+  .ob-form { display:none; }
+  .ob-input { width:80px; background:var(--c-subtle); border:1px solid var(--c-border); color:var(--c-text); border-radius:2px; padding:3px 6px; font-family:'IBM Plex Mono',monospace; font-size:11px; }
+  .ob-save { font-family:'IBM Plex Mono',monospace; font-size:10px; background:var(--c-accent); color:#080a10; border:none; border-radius:2px; padding:3px 7px; cursor:pointer; margin-left:3px; }
+  .accts-row.inactive { opacity:.45; }
+
+  .a-code { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); }
+  .a-name { font-size:13px; color:var(--c-text); font-weight:500; }
+  .a-sub  { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--c-faint); margin-top:2px; }
+  .a-type-pill {
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px;
+    padding:2px 6px; border-radius:2px; display:inline-block;
+  }
+  .type-checking     { background:var(--c-accent-bg); color:var(--c-accent); border:1px solid var(--c-accent-bd); }
+  .type-savings      { background:var(--c-green-bg);  color:var(--c-green-t); border:1px solid var(--c-green-bd); }
+  .type-credit_card  { background:var(--c-amber-bg);  color:var(--c-amber-t); border:1px solid var(--c-amber-bd); }
+  .type-investment   { background:#1e1a2e; color:#a78bfa; border:1px solid #3e3060; }
+
+  .a-ccy  { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-text2); }
+  .a-last4 { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); }
+  .a-owner { font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--c-text2); }
+  .a-status-active   { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-green-t); }
+  .a-status-inactive { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-faint); }
+
+  .deact-btn {
+    font-family:'IBM Plex Mono',monospace; font-size:10px;
+    background:transparent; border:1px solid var(--c-border);
+    color:var(--c-muted); border-radius:2px; padding:3px 8px; cursor:pointer;
+  }
+  .deact-btn:hover { border-color:var(--c-red-bd); color:var(--c-red-t); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="accts-wrap">
+  <div class="accts-header">
+    <span class="accts-title">Accounts</span>
+    <button onclick="toggleAddForm()" style="font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--c-accent);color:#080a10;border:none;border-radius:3px;padding:7px 14px;cursor:pointer;font-weight:600">+ Add account</button>
+  </div>
+
+  {% if flash_msg %}
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-green-t);background:var(--c-green-bg);border:1px solid var(--c-green-bd);border-radius:3px;padding:8px 12px;margin-bottom:14px">{{ flash_msg }}</div>
+  {% endif %}
+
+  <!-- Add form (hidden by default) -->
+  <div class="add-form-wrap" id="add-form" style="display:none">
+    <div style="font-family:'Spectral',serif;font-size:15px;font-weight:600;margin-bottom:12px;color:var(--c-text2)">New account</div>
+    <form method="post" action="{{ url_for('add_account') }}">
+      <div class="add-form-grid">
+        <div>
+          <label class="af-label">Code *</label>
+          <input class="af-input" name="account_code" placeholder="HSBC_UK" required>
+        </div>
+        <div>
+          <label class="af-label">Display name *</label>
+          <input class="af-input" name="display_name" placeholder="HSBC UK Current" required>
+        </div>
+        <div>
+          <label class="af-label">Institution</label>
+          <input class="af-input" name="institution" placeholder="HSBC UK">
+        </div>
+        <div>
+          <label class="af-label">Type</label>
+          <select class="af-select" name="account_type">
+            <option value="checking">Checking</option>
+            <option value="savings">Savings</option>
+            <option value="credit_card">Credit card</option>
+            <option value="investment">Investment</option>
+          </select>
+        </div>
+        <div>
+          <label class="af-label">Currency</label>
+          <input class="af-input" name="currency" placeholder="GBP" maxlength="3" style="text-transform:uppercase">
+        </div>
+        <div>
+          <label class="af-label">Last 4</label>
+          <input class="af-input" name="last4" placeholder="1234" maxlength="4">
+        </div>
+      </div>
+      <div class="add-form-row2">
+        <div>
+          <label class="af-label">Description</label>
+          <input class="af-input" name="description" placeholder="Optional notes">
+        </div>
+        <div>
+          <label class="af-label">Opening balance</label>
+          <input class="af-input" name="opening_balance_native" type="number" step="0.01" placeholder="0.00 (leave blank if unknown)">
+        </div>
+        <div>
+          <label class="af-label">Owner</label>
+          <select class="af-select" name="owner_id" id="owner-select" onchange="toggleNewOwnerInput(this)">
+            {% for o in owners %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+            {% endfor %}
+            <option value="__new__">+ New owner…</option>
+          </select>
+          <input class="af-input" name="new_owner_name" id="new-owner-input"
+                 placeholder="New owner name" style="display:none;margin-top:6px">
+        </div>
+      </div>
+      <div class="add-form-row2" style="margin-top:10px">
+        <div>
+          <label class="af-label">Statement format (for PDF import)</label>
+          <select class="af-select" name="statement_format">
+            <option value="">— none / manual only —</option>
+            <option value="hsbc">HSBC UK</option>
+            <option value="chase_bank">Chase Checking / Savings</option>
+            <option value="sapphire">Chase Sapphire Reserve</option>
+          </select>
+        </div>
+      </div>
+      <div class="af-actions">
+        <button type="button" class="af-cancel" onclick="toggleAddForm()">Cancel</button>
+        <button type="submit" class="af-save">Save account</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Accounts table -->
+  <div class="accts-table">
+    <div class="accts-thead">
+      <span>Code</span>
+      <span>Name</span>
+      <span>Type</span>
+      <span>Ccy</span>
+      <span>Last 4</span>
+      <span>Owner</span>
+      <span>Opening bal.</span>
+      <span>Status</span>
+      <span></span>
+    </div>
+    {% for a in accounts %}
+    <div class="accts-row {% if not a.is_active %}inactive{% endif %}">
+      <div class="a-code">{{ a.account_code }}</div>
+      <div>
+        <div class="a-name">{{ a.display_name }}</div>
+        {% if a.institution %}<div class="a-sub">{{ a.institution }}</div>{% endif %}
+        {% if a.statement_format %}<div class="a-sub" style="color:var(--c-accent)">PDF import: {{ a.statement_format }}</div>{% endif %}
+      </div>
+      <div>
+        <span class="a-type-pill type-{{ a.account_type }}">{{ a.account_type | replace('_',' ') }}</span>
+      </div>
+      <div class="a-ccy">{{ a.currency }}</div>
+      <div class="a-last4">{{ ('···' + a.account_number_last4) if a.account_number_last4 else '—' }}</div>
+      <div class="a-owner">{{ a.owner_name or '—' }}</div>
+      <div>
+        <span class="ob-display" onclick="toggleOb({{ a.id }})" title="Click to edit">
+          {% if a.opening_balance_native is not none %}{{ a.currency|ccy }}{{ a.opening_balance_native|fmt }}{% else %}—{% endif %}
+        </span>
+        <form class="ob-form" id="ob-form-{{ a.id }}" method="post"
+              action="{{ url_for('set_opening_balance', acct_id=a.id) }}">
+          <input class="ob-input" name="opening_balance_native" type="number" step="0.01"
+                 value="{{ a.opening_balance_native if a.opening_balance_native is not none else '' }}"
+                 placeholder="0.00">
+          <button class="ob-save" type="submit">✓</button>
+          <button type="button" style="background:none;border:none;color:var(--c-faint);cursor:pointer;font-size:11px" onclick="toggleOb({{ a.id }})">✕</button>
+        </form>
+      </div>
+      <div>
+        {% if a.is_active %}
+          <span class="a-status-active">● Active</span>
+        {% else %}
+          <span class="a-status-inactive">○ Inactive</span>
+        {% endif %}
+      </div>
+      <div>
+        {% if a.is_active %}
+        <form method="post" action="{{ url_for('deactivate_account', acct_id=a.id) }}"
+              onsubmit="return confirm('Deactivate {{ a.display_name }}? It will be hidden from dashboards but historical data is kept.')">
+          <button class="deact-btn" type="submit">Deactivate</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function toggleAddForm() {
+    const f = document.getElementById('add-form');
+    f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function toggleNewOwnerInput(select) {
+    const input = document.getElementById('new-owner-input');
+    const isNew = select.value === '__new__';
+    input.style.display = isNew ? 'block' : 'none';
+    input.required = isNew;
+    if (isNew) input.focus();
+  }
+
+  function toggleOb(id) {
+    const disp = document.querySelector(`#ob-form-${id}`).previousElementSibling;
+    const form = document.getElementById(`ob-form-${id}`);
+    const showing = form.style.display === 'flex';
+    disp.style.display = showing ? 'inline' : 'none';
+    form.style.display = showing ? 'none' : 'flex';
+    if (!showing) form.querySelector('input').focus();
+  }
+</script>
+{% endblock %}

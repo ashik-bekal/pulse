@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.name }} - Master Ledger{% endblock %}
+{% block content %}
+<h1>{{ trip.name }}</h1>
+<p class="muted">{{ trip.start_date or "" }} {% if trip.end_date %}→ {{ trip.end_date }}{% endif %}</p>
+
+<div class="grid grid-3">
+    <div class="card">
+        <h2 style="margin-top:0">By Account</h2>
+        <table>
+            <tr><th>Account</th><th>Native Spend</th><th>Reporting Spend</th></tr>
+            {% for r in by_account %}
+            <tr>
+                <td>{{ r.account_name }}</td>
+                <td>{{ "%.2f"|format(r.native_spend or 0) }} {{ r.currency }}</td>
+                <td>{{ "%.2f"|format(r.reporting_spend or 0) }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <div class="card">
+        <h2 style="margin-top:0">By Category</h2>
+        <table>
+            <tr><th>Category</th><th>Reporting Spend</th></tr>
+            {% for r in by_category %}
+            <tr>
+                <td>{{ r.category_name or "Uncategorized" }}</td>
+                <td>{{ "%.2f"|format(r.reporting_spend or 0) }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</div>
+
+<h2>All Transactions</h2>
+<table>
+    <tr><th>Date</th><th>Account</th><th>Description</th><th>Category</th><th>Amount</th></tr>
+    {% for t in transactions %}
+    <tr>
+        <td class="muted">{{ t.transaction_date }}</td>
+        <td>{{ t.account_name }}</td>
+        <td>{{ t.description }}</td>
+        <td>{{ t.category_name or "—" }}</td>
+        <td class="{{ 'amount-neg' if t.settlement_amount < 0 else 'amount-pos' }}">
+            {{ "%.2f"|format(t.settlement_amount) }} {{ t.settlement_currency }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}
