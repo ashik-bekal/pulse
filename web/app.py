@@ -27,6 +27,21 @@ from persistence.repositories import (
 
 app = Flask(__name__)
 
+# All deployment-sensitive settings come from the environment — see
+# .env.example. SECRET_KEY gets a random per-process fallback so a dev
+# instance works out of the box, but anything session-dependent would
+# reset on restart; production must set it explicitly.
+app.config["SECRET_KEY"] = os.environ.get("PULSE_SECRET_KEY") or os.urandom(32).hex()
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PULSE_MAX_UPLOAD_MB", "16")) * 1024 * 1024
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    return resp
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 CCY_SYMBOL = {"GBP": "£", "USD": "$", "EUR": "€", "INR": "₹",
@@ -762,6 +777,15 @@ def api_import_detect():
     if not pdf_file:
         return jsonify({"ok": False, "error": "No file provided"}), 400
 
+    # Validate it's actually a PDF before writing to disk: the browser's
+    # accept= filter is advisory only, and everything downstream
+    # (pdfplumber, the parsers) assumes PDF structure. Magic bytes beat
+    # trusting the filename extension or client Content-Type.
+    header = pdf_file.stream.read(5)
+    pdf_file.stream.seek(0)
+    if header != b"%PDF-":
+        return jsonify({"ok": False, "error": "Not a PDF file"}), 400
+
     temp_id  = str(uuid.uuid4())
     tmp_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
     pdf_file.save(tmp_path)
@@ -831,6 +855,18 @@ def api_import_queue():
 
     if not temp_id or not account_type:
         return jsonify({"ok": False, "error": "temp_id and account_type are required"}), 400
+
+    # temp_id is client-supplied and becomes part of a filesystem path —
+    # accept only the exact UUID format this server issued in
+    # /api/import/detect, otherwise "../../" traversal could address
+    # arbitrary files.
+    try:
+        temp_id = str(uuid.UUID(temp_id))
+    except (ValueError, AttributeError, TypeError):
+        return jsonify({"ok": False, "error": "Invalid temp_id"}), 400
+
+    if account_type not in ("hsbc", "chase_bank", "sapphire"):
+        return jsonify({"ok": False, "error": "Unknown account_type"}), 400
 
     tmp_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
     if not os.path.exists(tmp_path):
@@ -1106,4 +1142,12 @@ def api_bulk_delete_vendor_rules():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    # Debug mode exposes the Werkzeug interactive debugger (arbitrary code
+    # execution) — it must never default on. Enable locally with
+    # PULSE_DEBUG=1. For production use a WSGI server (see README):
+    #   gunicorn -w 2 -b 127.0.0.1:8000 web.app:app
+    app.run(
+        debug=os.environ.get("PULSE_DEBUG") == "1",
+        host=os.environ.get("PULSE_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PULSE_PORT", "5001")),
+    )
