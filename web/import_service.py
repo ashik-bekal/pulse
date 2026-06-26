@@ -9,6 +9,7 @@ Job management: a lightweight in-memory job store backed by a threading.Lock.
   Temp PDF files are stored in TEMP_DIR and deleted by the worker thread
   when the job completes (success or failure).
 """
+import logging
 import os
 import re
 import uuid
@@ -20,6 +21,8 @@ from typing import Optional
 
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "ledger_imports")
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+log = logging.getLogger("pulse.import")
 
 _jobs: dict = {}       # job_id -> dict
 _jobs_lock = threading.Lock()
@@ -296,6 +299,7 @@ def _run_job(job_id: str) -> None:
             })
 
     except Exception as exc:
+        log.exception("Import job %s failed for %r", job_id, job.get("filename"))
         with _jobs_lock:
             _jobs[job_id].update({
                 "status":      "error",

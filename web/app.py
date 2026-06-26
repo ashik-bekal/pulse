@@ -5,6 +5,7 @@ persistence/repositories.py.  Routes do three things only:
   2. call repositories / compute presentation-layer values
   3. render a template or return JSON
 """
+import logging
 import os
 import sys
 import uuid
@@ -35,12 +36,75 @@ app.config["SECRET_KEY"] = os.environ.get("PULSE_SECRET_KEY") or os.urandom(32).
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PULSE_MAX_UPLOAD_MB", "16")) * 1024 * 1024
 
 
+logging.basicConfig(
+    level=os.environ.get("PULSE_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+log = logging.getLogger("pulse")
+
+
 @app.after_request
 def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     return resp
+
+
+def _wants_json() -> bool:
+    return request.path.startswith("/api/")
+
+
+@app.errorhandler(404)
+def _not_found(e):
+    if _wants_json():
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    return "Not found", 404
+
+
+@app.errorhandler(413)
+def _too_large(e):
+    limit = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return jsonify({"ok": False, "error": f"File too large (limit {limit} MB)"}), 413
+
+
+@app.errorhandler(500)
+def _server_error(e):
+    log.exception("Unhandled error on %s %s", request.method, request.path)
+    if _wants_json():
+        return jsonify({"ok": False, "error": "Internal server error"}), 500
+    return "Something went wrong — check the server log for details.", 500
+
+
+_schema_checked = False
+
+@app.before_request
+def _ensure_db_initialized():
+    """Fail with a clear instruction instead of a cryptic 'no such table'
+    traceback when the app is started before cli/init_db.py has ever run."""
+    global _schema_checked
+    if _schema_checked:
+        return
+    with closing(get_connection()) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='accounts'"
+        ).fetchone()
+    if not row:
+        return ("Database not initialized. Run:  python3 cli/init_db.py "
+                "(optionally PULSE_DB_PATH=<path> to choose a location)"), 503
+    _schema_checked = True
+
+
+def _int_arg(name: str, default: int = 0, minimum: int = None) -> int:
+    """request.args integer with garbage tolerance: '?offset=abc' should
+    degrade to the default, not 500 the page."""
+    try:
+        val = int(request.args.get(name, default) or default)
+    except (TypeError, ValueError):
+        val = default
+    if minimum is not None:
+        val = max(minimum, val)
+    return val
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -184,7 +248,7 @@ def _fmt(amount):
 @app.route("/")
 def dashboard():
     cat_month  = request.args.get("month", "")
-    cov_offset = max(0, int(request.args.get("cov_offset", 0) or 0))
+    cov_offset = _int_arg("cov_offset", 0, minimum=0)
     with closing(get_connection()) as conn:
         account_repo  = AccountRepository(conn)
         txn_repo      = TransactionRepository(conn)
@@ -278,8 +342,8 @@ def transactions():
     with closing(get_connection()) as conn:
         txn_repo = TransactionRepository(conn)
         filter_kwargs = dict(
-            account_id=int(account_filter)  if account_filter  else None,
-            category_id=int(category_filter) if category_filter else None,
+            account_id=int(account_filter)  if account_filter.isdigit()  else None,
+            category_id=int(category_filter) if category_filter.isdigit() else None,
             confidence=confidence_filter or None,
             year_month=month_filter or None,
             description=desc_filter or None,
@@ -309,7 +373,7 @@ def transactions():
 
 @app.route("/analysis")
 def analysis():
-    offset = max(0, int(request.args.get("offset", 0) or 0))
+    offset = _int_arg("offset", 0, minimum=0)
     months = _recent_months(6, offset=offset)
 
     # Checkboxes share the name "categories", so the picker submits it as a
@@ -379,7 +443,7 @@ def analysis():
         } for cid, name in picker_categories]
 
         drill_rows = None
-        if drill_month and drill_category:
+        if drill_month and drill_category.isdigit():
             drill_rows = txn_repo.list_filtered(
                 category_id=int(drill_category), year_month=drill_month, limit=200,
             )
@@ -913,7 +977,10 @@ def add_account():
             ).fetchone()
             owner_id = existing["id"] if existing else acct_repo.add_owner(new_owner_name)
         else:
-            owner_id = int(owner_id_raw)
+            try:
+                owner_id = int(owner_id_raw)
+            except (TypeError, ValueError):
+                return redirect(url_for("accounts_view", msg="Invalid owner selection"))
 
         acct_id = acct_repo.add(
             account_code, display_name,
