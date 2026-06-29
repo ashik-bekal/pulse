@@ -145,33 +145,6 @@ def _recent_months(n: int = 4, offset: int = 0) -> list:
     return result
 
 
-def _net_worth_gbp(conn) -> float:
-    accts = conn.execute(
-        "SELECT id, currency, account_type FROM accounts WHERE is_active=1"
-    ).fetchall()
-    total = 0.0
-    for acct in accts:
-        snap = conn.execute("""
-            SELECT closing_balance_native FROM account_snapshots
-            WHERE account_id=? AND is_hidden=0 ORDER BY year_month DESC LIMIT 1
-        """, (acct["id"],)).fetchone()
-        if not snap:
-            continue
-        balance = snap["closing_balance_native"]
-        if acct["account_type"] == "credit_card":
-            balance = -balance
-        if acct["currency"] == "GBP":
-            total += balance
-        else:
-            rate_row = conn.execute("""
-                SELECT rate_to_reporting FROM exchange_rates
-                WHERE currency=? ORDER BY year_month DESC LIMIT 1
-            """, (acct["currency"],)).fetchone()
-            rate = rate_row["rate_to_reporting"] if rate_row else 1.0
-            total += balance * rate
-    return total
-
-
 def _build_chart_data(monthly_totals) -> list:
     months_asc = list(reversed(list(monthly_totals)))
     incomes  = [abs(m["income"]  or 0) for m in months_asc]
@@ -302,7 +275,12 @@ def dashboard():
         txn_count        = txn_repo.count_all()
         monthly_totals   = txn_repo.monthly_income_expense_totals(limit_months=6)
         chart_data       = _build_chart_data(monthly_totals)
-        net_worth        = _net_worth_gbp(conn)
+        # Net worth from the per-account balances computed above — avoids
+        # _net_worth_gbp's re-run of the same snapshot + FX queries per account.
+        net_worth = sum(
+            (a["display_balance"] if a["currency"] == "GBP" else (a["gbp_equiv"] or 0.0))
+            for a in accounts if a["display_balance"] is not None
+        )
         avail_months     = txn_repo.available_months()
         selected_month   = cat_month if cat_month in avail_months else (avail_months[0] if avail_months else "")
         cat_spend_raw    = txn_repo.spend_by_category_for_month(selected_month) if selected_month else []
