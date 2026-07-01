@@ -146,7 +146,6 @@ CREATE INDEX IF NOT EXISTS idx_transactions_trip ON transactions(trip_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_transactions_source ON transactions(account_id, source_statement);
-CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue(status);
 
 -- ============================================================
 -- ACCOUNT SNAPSHOTS (end-of-month closing balance per account, native currency)
@@ -215,3 +214,5 @@ CREATE TABLE IF NOT EXISTS review_queue (
     created_at TEXT DEFAULT (datetime('now')),
     resolved_at TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue(status);

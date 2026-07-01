@@ -94,7 +94,12 @@ def parse(text: str, statement_year: int, statement_start_month: int,
     while i < n:
         line = lines[i]
 
-        if "ACCOUNT ACTIVITY" in _normalize_doubled_chars(line.upper()):
+        # Check the raw line AND the de-doubled form: the normalizer exists
+        # for the bold/shadow "AACCCCOOUUNNTT" artefact, but it MANGLES plain
+        # text (the legitimate double-C in "ACCOUNT" collapses to "ACOUNT"),
+        # so applying it unconditionally would miss a normal-text header.
+        if ("ACCOUNT ACTIVITY" in line.upper()
+                or "ACCOUNT ACTIVITY" in _normalize_doubled_chars(line.upper())):
             in_activity_section = True
             i += 1
             continue
