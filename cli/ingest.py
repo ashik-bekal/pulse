@@ -25,7 +25,7 @@ from persistence.repositories import (
     AccountRepository, CategoryRepository, VendorRuleRepository, TransactionRepository,
     ReviewQueueRepository, ExchangeRateRepository, SnapshotRepository,
 )
-from parsers import hsbc, chase_bank, chase_sapphire
+from parsers import hsbc, chase_bank, chase_sapphire, ofx as ofx_parser
 from services.ingestion import ingest_transactions, flag_fx_sanity_failures
 from services.reconciliation import record_snapshot, format_report
 
@@ -162,21 +162,69 @@ def ingest_sapphire(conn, pdf_path: str, year: int, start_month: int, target_acc
     return inserted_ids, skipped, result.is_clean, result.diff
 
 
+def ingest_ofx(conn, ofx_path: str, target_account_id: int = None):
+    with open(ofx_path, encoding="latin-1") as f:
+        text = f.read()
+
+    transactions = ofx_parser.parse(text)
+    closing_balance = ofx_parser.extract_ledger_balance(text)
+    result = ofx_parser.reconcile(transactions, closing_balance=closing_balance)
+
+    if target_account_id is None:
+        raise ValueError(
+            "OFX imports require an explicit account — pass --account-code <CODE> or "
+            "set target_account_id when calling ingest_ofx() directly."
+        )
+    account_id = target_account_id
+
+    review_repo = ReviewQueueRepository(conn)
+    inserted_ids, skipped = ingest_transactions(
+        transactions, account_id, os.path.basename(ofx_path),
+        TransactionRepository(conn), VendorRuleRepository(conn),
+        CategoryRepository(conn), review_repo, ExchangeRateRepository(conn),
+        skip_statement_check=True,
+    )
+
+    print(f"\n=== OFX: {os.path.basename(ofx_path)} ===")
+    print(f"Transactions parsed: {len(transactions)}  Inserted: {len(inserted_ids)}  Skipped (duplicates): {skipped}")
+    if closing_balance is not None:
+        print(f"Closing balance (LEDGERBAL): {closing_balance}")
+        print("  ⚠ Opening balance not in OFX — full reconciliation unverified.")
+    else:
+        print("  No LEDGERBAL found — reconciliation skipped.")
+
+    year_month = transactions[-1].date[:7] if transactions else None
+    if year_month:
+        record_snapshot(SnapshotRepository(conn), account_id, year_month, result)
+
+    return inserted_ids, skipped, result.is_clean, result.diff
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("account_type", choices=["hsbc", "chase_bank", "sapphire"])
-    parser.add_argument("pdf_path")
+    parser.add_argument("account_type", choices=["hsbc", "chase_bank", "sapphire", "ofx"])
+    parser.add_argument("file_path", help="Path to the statement file (PDF or OFX)")
     parser.add_argument("--year", type=int, default=None)
     parser.add_argument("--start-month", type=int, default=None)
+    parser.add_argument("--account-code", default=None,
+                        help="Account code for OFX imports (required for ofx; e.g. US_CHECKING)")
     args = parser.parse_args()
 
     conn = get_connection()
+    target_account_id = None
+    if args.account_code:
+        target_account_id = AccountRepository(conn).get_id_by_code(args.account_code)
+
     if args.account_type == "hsbc":
-        ingest_hsbc(conn, args.pdf_path)
+        ingest_hsbc(conn, args.file_path, target_account_id=target_account_id)
     elif args.account_type == "chase_bank":
-        ingest_chase_bank(conn, args.pdf_path, args.year, args.start_month)
+        ingest_chase_bank(conn, args.file_path, args.year, args.start_month,
+                          target_account_id=target_account_id)
     elif args.account_type == "sapphire":
-        ingest_sapphire(conn, args.pdf_path, args.year, args.start_month)
+        ingest_sapphire(conn, args.file_path, args.year, args.start_month,
+                        target_account_id=target_account_id)
+    elif args.account_type == "ofx":
+        ingest_ofx(conn, args.file_path, target_account_id=target_account_id)
 
     conn.commit()
     conn.close()

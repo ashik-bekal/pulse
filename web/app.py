@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
-from web.import_service import TEMP_DIR, detect_pdf, start_job, get_jobs
+from web.import_service import TEMP_DIR, detect_pdf, detect_ofx, start_job, get_jobs
 
 from persistence.database import get_connection
 from persistence.repositories import (
@@ -814,43 +814,61 @@ def vendor_rules_view():
 
 @app.route("/api/import/detect", methods=["POST"])
 def api_import_detect():
-    """Save the uploaded PDF to a temp file, run detection, return results + temp_id."""
-    pdf_file = request.files.get("pdf")
-    if not pdf_file:
+    """Save the uploaded file to a temp location, run detection, return results + temp_id."""
+    uploaded = request.files.get("file") or request.files.get("pdf")
+    if not uploaded:
         return jsonify({"ok": False, "error": "No file provided"}), 400
 
-    # Validate it's actually a PDF before writing to disk: the browser's
-    # accept= filter is advisory only, and everything downstream
-    # (pdfplumber, the parsers) assumes PDF structure. Magic bytes beat
-    # trusting the filename extension or client Content-Type.
-    header = pdf_file.stream.read(5)
-    pdf_file.stream.seek(0)
-    if header != b"%PDF-":
-        return jsonify({"ok": False, "error": "Not a PDF file"}), 400
+    header = uploaded.stream.read(8)
+    uploaded.stream.seek(0)
+
+    # Detect file type by content, not by the browser-supplied extension.
+    if header[:5] == b"%PDF-":
+        file_ext = "pdf"
+    elif header[:10].lstrip(b"\xef\xbb\xbf").startswith((b"OFXHEADER", b"<OFX", b"<?xml", b"<?OFX")):
+        file_ext = "ofx"
+    else:
+        # Also accept files whose name ends in .ofx/.qfx even if the leading
+        # bytes don't match the patterns above (some banks omit the header).
+        ext = (uploaded.filename or "").rsplit(".", 1)[-1].lower()
+        if ext in ("ofx", "qfx"):
+            file_ext = "ofx"
+        else:
+            return jsonify({"ok": False, "error": "Unrecognised file type — upload a PDF, OFX, or QFX file"}), 400
 
     temp_id  = str(uuid.uuid4())
-    tmp_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
-    pdf_file.save(tmp_path)
+    tmp_path = os.path.join(TEMP_DIR, temp_id + "." + file_ext)
+    uploaded.save(tmp_path)
 
-    detection = detect_pdf(tmp_path)
+    detection = detect_ofx(tmp_path) if file_ext == "ofx" else detect_pdf(tmp_path)
 
-    # Auto-match a specific account by (statement_format, last4) so a batch
-    # of statements for the same account doesn't need re-picking per file —
-    # the caller just gets one confident answer instead of a bare format.
+    # Auto-match a specific account by last4. For PDF parsers we also filter by
+    # statement_format so two accounts at different banks with the same last4
+    # don't collide. For OFX files we can only filter by last4 (OFX works with
+    # any account regardless of statement_format).
     matched_account_id = None
     last4 = detection.pop("last4", None)
-    if detection.get("account_type") and last4:
+    if last4:
         with closing(get_connection()) as conn:
-            row = conn.execute(
-                "SELECT id FROM accounts WHERE statement_format=? AND account_number_last4=? AND is_active=1",
-                (detection["account_type"], last4),
-            ).fetchone()
+            if file_ext == "ofx":
+                row = conn.execute(
+                    "SELECT id FROM accounts WHERE account_number_last4=? AND is_active=1",
+                    (last4,),
+                ).fetchone()
+            elif detection.get("account_type"):
+                row = conn.execute(
+                    "SELECT id FROM accounts WHERE statement_format=? AND account_number_last4=? AND is_active=1",
+                    (detection["account_type"], last4),
+                ).fetchone()
+            else:
+                row = None
             if row:
                 matched_account_id = row["id"]
 
     return jsonify({
-        "ok": True, "temp_id": temp_id, "filename": pdf_file.filename,
-        "matched_account_id": matched_account_id, **detection,
+        "ok": True, "temp_id": temp_id, "filename": uploaded.filename,
+        "file_ext": file_ext, "matched_account_id": matched_account_id,
+        **detection,
     })
 
 
@@ -907,14 +925,19 @@ def api_import_queue():
     except (ValueError, AttributeError, TypeError):
         return jsonify({"ok": False, "error": "Invalid temp_id"}), 400
 
-    if account_type not in ("hsbc", "chase_bank", "sapphire"):
+    if account_type not in ("hsbc", "chase_bank", "sapphire", "ofx"):
         return jsonify({"ok": False, "error": "Unknown account_type"}), 400
 
-    tmp_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
+    file_ext = data.get("file_ext", "pdf")
+    if file_ext not in ("pdf", "ofx"):
+        file_ext = "pdf"
+
+    tmp_path = os.path.join(TEMP_DIR, temp_id + "." + file_ext)
     if not os.path.exists(tmp_path):
         return jsonify({"ok": False, "error": "Uploaded file not found — please re-upload"}), 404
 
-    job_id = start_job(temp_id, filename, account_type, year, start_month, target_account_id)
+    job_id = start_job(temp_id, filename, account_type, year, start_month, target_account_id,
+                       file_ext=file_ext)
     return jsonify({"ok": True, "job_id": job_id})
 
 

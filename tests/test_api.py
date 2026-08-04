@@ -63,14 +63,14 @@ def test_api_404_returns_json(client):
     assert resp.get_json()["ok"] is False
 
 
-def test_upload_rejects_non_pdf(client):
+def test_upload_rejects_unknown_file_type(client):
     resp = client.post(
         "/api/import/detect",
-        data={"pdf": (io.BytesIO(b"not a pdf at all"), "fake.pdf")},
+        data={"file": (io.BytesIO(b"not a pdf at all"), "fake.pdf")},
         content_type="multipart/form-data",
     )
     assert resp.status_code == 400
-    assert "Not a PDF" in resp.get_json()["error"]
+    assert "Unrecognised file type" in resp.get_json()["error"]
 
 
 def test_import_queue_rejects_path_traversal_temp_id(client):

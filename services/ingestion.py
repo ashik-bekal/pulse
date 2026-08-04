@@ -41,6 +41,7 @@ def ingest_transactions(
     review_repo: ReviewQueueRepository,
     rate_repo: ExchangeRateRepository,
     is_credit_card: bool = False,
+    skip_statement_check: bool = False,
 ) -> List[int]:
     """
     Categorize and persist a batch of already-parsed transactions for one
@@ -51,8 +52,13 @@ def ingest_transactions(
     then categorizes and inserts each transaction, flagging low/medium
     confidence results into the review queue exactly as the original
     insert_transaction() helper did.
+
+    skip_statement_check=True disables the filename-level already-imported
+    gate and relies solely on per-transaction fingerprint deduplication.
+    Use this for OFX imports, where the same export file may cover overlapping
+    date ranges and idempotency via fingerprint is safer than all-or-nothing.
     """
-    if txn_repo.already_imported(account_id, source_statement):
+    if not skip_statement_check and txn_repo.already_imported(account_id, source_statement):
         raise ValueError(f"Already imported: {source_statement!r} for account {account_id}. Delete the existing transactions first if you want to re-import.")
 
     # Sort once for the whole batch: categorize() requires descending pattern

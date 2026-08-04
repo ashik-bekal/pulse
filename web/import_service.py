@@ -38,6 +38,65 @@ MONTH_NAMES = {
 
 # ── Detection ─────────────────────────────────────────────────────────────────
 
+def detect_ofx(ofx_path: str) -> dict:
+    """
+    Identify the account type and period from an OFX / QFX file.
+
+    Returns the same dict shape as detect_pdf() so callers need no branching.
+    year and start_month are always None for OFX — dates come from the file
+    and the parser reads them directly, so the import form hides those fields.
+    """
+    try:
+        with open(ofx_path, encoding="latin-1") as f:
+            text = f.read()
+    except Exception as exc:
+        return _unknown(f"Could not read OFX file: {exc}")
+
+    try:
+        import sys as _sys, os as _os
+        _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
+        from parsers.ofx import extract_account_info
+        info = extract_account_info(text)
+    except Exception as exc:
+        return _unknown(f"OFX parsing failed: {exc}")
+
+    acct_type_raw = (info.get("account_type") or "").upper()
+    if acct_type_raw in ("CHECKING", "MONEYMRKT"):
+        acct_label = "OFX – Checking"
+    elif acct_type_raw == "SAVINGS":
+        acct_label = "OFX – Savings"
+    elif acct_type_raw in ("CREDITLINE", "CREDIT"):
+        acct_label = "OFX – Credit Card"
+    else:
+        acct_label = "OFX"
+
+    end_date   = info.get("end_date")
+    start_date = info.get("start_date")
+    period_label = None
+    if end_date and hasattr(end_date, "strftime"):
+        period_label = end_date.strftime("%b %Y")
+    elif start_date and hasattr(start_date, "strftime"):
+        period_label = start_date.strftime("%b %Y")
+
+    last4 = info.get("last4")
+    notes = f"Detected {acct_label}."
+    if last4:
+        notes += f" Account …{last4}."
+    if period_label:
+        notes += f" Period: {period_label}."
+
+    return {
+        "account_type":  "ofx",
+        "account_label": acct_label,
+        "year":          None,
+        "start_month":   None,
+        "period_label":  period_label,
+        "confidence":    "high",
+        "notes":         notes,
+        "last4":         last4,
+    }
+
+
 def detect_pdf(pdf_path: str) -> dict:
     """
     Identify the statement type and period from the PDF.
@@ -232,7 +291,8 @@ def _unknown(notes: str) -> dict:
 
 def start_job(temp_id: str, filename: str, account_type: str,
               year: Optional[int], start_month: Optional[int],
-              target_account_id: Optional[int] = None) -> str:
+              target_account_id: Optional[int] = None,
+              file_ext: str = "pdf") -> str:
     job_id = str(uuid.uuid4())[:8]
     with _jobs_lock:
         _jobs[job_id] = {
@@ -243,6 +303,7 @@ def start_job(temp_id: str, filename: str, account_type: str,
             "year":              year,
             "start_month":       start_month,
             "target_account_id": target_account_id,
+            "file_ext":          file_ext,
             "status":            "queued",
             "inserted":          0,
             "error":             None,
@@ -264,13 +325,14 @@ def _run_job(job_id: str) -> None:
         job = _jobs[job_id]
         _jobs[job_id]["status"] = "running"
 
-    pdf_path = os.path.join(TEMP_DIR, job["temp_id"] + ".pdf")
+    file_ext  = job.get("file_ext", "pdf")
+    file_path = os.path.join(TEMP_DIR, job["temp_id"] + "." + file_ext)
     try:
         # Import inline to avoid circular import at module load time
         import sys, os as _os
         _os.sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
         from persistence.database import get_connection
-        from cli.ingest import ingest_hsbc, ingest_chase_bank, ingest_sapphire
+        from cli.ingest import ingest_hsbc, ingest_chase_bank, ingest_sapphire, ingest_ofx
 
         with closing(get_connection()) as conn:
             acct = job["account_type"]
@@ -279,11 +341,13 @@ def _run_job(job_id: str) -> None:
             target_account_id = job.get("target_account_id")
 
             if acct == "hsbc":
-                inserted_ids, skipped, reconciled, diff = ingest_hsbc(conn, pdf_path, target_account_id=target_account_id)
+                inserted_ids, skipped, reconciled, diff = ingest_hsbc(conn, file_path, target_account_id=target_account_id)
             elif acct == "chase_bank":
-                inserted_ids, skipped, reconciled, diff = ingest_chase_bank(conn, pdf_path, year, sm, target_account_id=target_account_id)
+                inserted_ids, skipped, reconciled, diff = ingest_chase_bank(conn, file_path, year, sm, target_account_id=target_account_id)
             elif acct == "sapphire":
-                inserted_ids, skipped, reconciled, diff = ingest_sapphire(conn, pdf_path, year, sm, target_account_id=target_account_id)
+                inserted_ids, skipped, reconciled, diff = ingest_sapphire(conn, file_path, year, sm, target_account_id=target_account_id)
+            elif acct == "ofx":
+                inserted_ids, skipped, reconciled, diff = ingest_ofx(conn, file_path, target_account_id=target_account_id)
             else:
                 raise ValueError(f"Unknown account type: {acct}")
             conn.commit()
@@ -307,5 +371,5 @@ def _run_job(job_id: str) -> None:
                 "finished_at": datetime.now().isoformat(timespec="seconds"),
             })
     finally:
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
