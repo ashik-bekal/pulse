@@ -104,3 +104,25 @@ def test_unmatched_transactions_land_in_review_queue(conn):
     ingest(conn, [txn()])
     conn.commit()
     assert ReviewQueueRepository(conn).count_open() == 1
+
+
+def test_category_list_groups_subcategories_under_parent(conn):
+    """Sub-categories must appear immediately after their parent, not at their
+    raw alphabetical position. 'Taxi' (child of Transport) used to render
+    between Subscriptions and Transport because ORDER BY c.name sorts all rows
+    together."""
+    repo = CategoryRepository(conn)
+    repo.add("Subscriptions", None, "expense")
+    transport_id = repo.add("Transport", None, "expense")
+    repo.add("Taxi", transport_id, "expense")
+    conn.commit()
+
+    rows = repo.list_all_with_counts()
+    names = [r["name"] for r in rows]
+
+    taxi_idx = names.index("Taxi")
+    transport_idx = names.index("Transport")
+    subscriptions_idx = names.index("Subscriptions")
+
+    assert transport_idx < taxi_idx, "Transport must come before Taxi"
+    assert subscriptions_idx < transport_idx, "Subscriptions must come before Transport group"
