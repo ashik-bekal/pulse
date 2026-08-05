@@ -133,7 +133,7 @@ class CategoryRepository:
             LEFT JOIN transactions t ON t.category_id = c.id
             LEFT JOIN vendor_rules vr ON vr.category_id = c.id AND vr.is_active = 1
             GROUP BY c.id
-            ORDER BY c.name
+            ORDER BY COALESCE(p.name, c.name), c.parent_id IS NOT NULL, c.name
         """).fetchall()
 
     def add(self, name: str, parent_id: Optional[int], money_type: str) -> int:
