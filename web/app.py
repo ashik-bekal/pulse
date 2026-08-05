@@ -894,17 +894,19 @@ def api_import_detect():
 
     # Auto-match a specific account by last4. For PDF parsers we also filter by
     # statement_format so two accounts at different banks with the same last4
-    # don't collide. For OFX files we can only filter by last4 (OFX works with
-    # any account regardless of statement_format).
+    # don't collide. For OFX files we can only filter by last4; only auto-select
+    # when the match is unique so two accounts sharing a suffix don't cause a
+    # silent mis-filing under the wrong ledger account.
     matched_account_id = None
     last4 = detection.pop("last4", None)
     if last4:
         with closing(get_connection()) as conn:
             if file_ext == "ofx":
-                row = conn.execute(
+                ofx_rows = conn.execute(
                     "SELECT id FROM accounts WHERE account_number_last4=? AND is_active=1",
                     (last4,),
-                ).fetchone()
+                ).fetchall()
+                row = ofx_rows[0] if len(ofx_rows) == 1 else None
             elif detection.get("account_type"):
                 row = conn.execute(
                     "SELECT id FROM accounts WHERE statement_format=? AND account_number_last4=? AND is_active=1",

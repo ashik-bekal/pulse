@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from parsers.ofx import parse, reconcile, extract_ledger_balance, extract_account_info
+from parsers.ofx import parse, reconcile, extract_ledger_balance, extract_account_info, extract_statement_end_date
 from persistence.database import init_schema
 from persistence.repositories import (
     AccountRepository, CategoryRepository, VendorRuleRepository,
@@ -348,6 +348,16 @@ def test_extract_ledger_balance_absent():
     assert extract_ledger_balance(OFX2_CREDIT) is None
 
 
+def test_extract_statement_end_date_uses_dtasof_when_present():
+    # OFX2_CHECKING has DTASOF=20260131 in LEDGERBAL — preferred over DTEND.
+    assert extract_statement_end_date(OFX2_CHECKING) == "2026-01"
+
+
+def test_extract_statement_end_date_falls_back_to_dtend():
+    # OFX2_CREDIT has DTEND=20260131 but no LEDGERBAL/DTASOF.
+    assert extract_statement_end_date(OFX2_CREDIT) == "2026-01"
+
+
 # ── Account info extraction ────────────────────────────────────────────────────
 
 def test_extract_account_info_checking():
@@ -418,3 +428,23 @@ def test_reimport_is_idempotent_via_fingerprint(conn):
     inserted2, skipped2 = ingest_transactions(txns, account_id, "jan2026.ofx",
                                               skip_statement_check=True, **_repos(conn))
     assert len(inserted2) == 0 and skipped2 == 3
+
+
+def test_ofx_credit_card_positive_tagged_as_reimbursement(conn):
+    """Unmatched positive OFX entries on a credit card account are reimbursements, not income."""
+    conn.execute("""
+        INSERT INTO accounts (account_code, display_name, account_type, currency, owner_id, statement_format)
+        VALUES ('US_CREDIT_CARD', 'US Credit Card', 'credit_card', 'USD', 1, 'ofx')
+    """)
+    conn.commit()
+    txns = parse(OFX2_CREDIT)
+    account_id = conn.execute("SELECT id FROM accounts WHERE account_code='US_CREDIT_CARD'").fetchone()["id"]
+    inserted, _ = ingest_transactions(txns, account_id, "cc_jan2026.ofx",
+                                      is_credit_card=True, skip_statement_check=True, **_repos(conn))
+    rows = {r["settlement_amount"]: r["money_type"]
+            for r in conn.execute(
+                f"SELECT settlement_amount, money_type FROM transactions WHERE id IN ({','.join('?' * len(inserted))})",
+                inserted,
+            ).fetchall()}
+    assert rows[500.0] == "reimbursement"
+    assert rows[-80.0] == "expense"

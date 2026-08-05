@@ -177,11 +177,17 @@ def ingest_ofx(conn, ofx_path: str, target_account_id: int = None):
         )
     account_id = target_account_id
 
+    acct_row = conn.execute(
+        "SELECT account_type FROM accounts WHERE id=?", (account_id,)
+    ).fetchone()
+    is_credit_card = acct_row is not None and acct_row["account_type"] == "credit_card"
+
     review_repo = ReviewQueueRepository(conn)
     inserted_ids, skipped = ingest_transactions(
         transactions, account_id, os.path.basename(ofx_path),
         TransactionRepository(conn), VendorRuleRepository(conn),
         CategoryRepository(conn), review_repo, ExchangeRateRepository(conn),
+        is_credit_card=is_credit_card,
         skip_statement_check=True,
     )
 
@@ -193,7 +199,10 @@ def ingest_ofx(conn, ofx_path: str, target_account_id: int = None):
     else:
         print("  No LEDGERBAL found — reconciliation skipped.")
 
-    year_month = transactions[-1].date[:7] if transactions else None
+    year_month = (
+        ofx_parser.extract_statement_end_date(text)
+        or (transactions[-1].date[:7] if transactions else None)
+    )
     if year_month:
         record_snapshot(SnapshotRepository(conn), account_id, year_month, result)
 
