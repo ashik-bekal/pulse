@@ -90,6 +90,26 @@
   .bulk-mtype-btn.selected { opacity:1; outline:2px solid var(--c-accent); outline-offset:1px; }
   .bulk-resolve-btn { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); border-radius:3px; padding:7px 16px; cursor:pointer; white-space:nowrap; }
   .bulk-cancel-btn  { font-family:'IBM Plex Mono',monospace; font-size:11px; background:transparent; border:1px solid var(--c-border); color:var(--c-muted); border-radius:3px; padding:7px 12px; cursor:pointer; }
+
+  /* Rule suggestion modal */
+  .rule-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center; }
+  .rule-modal-card { background:var(--c-card);border:1px solid var(--c-border);border-radius:8px;padding:1.5rem;width:min(580px,94vw);max-height:85vh;display:flex;flex-direction:column;gap:1rem;overflow:hidden; }
+  .rule-modal-header { display:flex;justify-content:space-between;align-items:center; }
+  .rule-modal-title { font-family:'Spectral',serif;font-size:16px;font-weight:600;color:var(--c-text); }
+  .rule-modal-close { background:none;border:none;cursor:pointer;color:var(--c-muted);font-size:16px;padding:2px 6px;border-radius:3px; }
+  .rule-modal-close:hover { color:var(--c-text); }
+  .rule-modal-form { display:flex;flex-direction:column;gap:.5rem; }
+  .rm-field-row { display:grid;grid-template-columns:90px 1fr;align-items:center;gap:.5rem; }
+  .rm-field-row label { font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-muted); }
+  .rm-field-row input,.rm-field-row select { font-family:'IBM Plex Mono',monospace;font-size:11px;padding:.3rem .5rem;border:1px solid var(--c-border);border-radius:3px;background:var(--c-bg);color:var(--c-text);width:100%; }
+  .rule-modal-preview-header { font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-muted);border-top:1px solid var(--c-border);padding-top:.75rem; }
+  .rm-preview-list { overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:2px;min-height:40px; }
+  .rm-preview-row { display:grid;grid-template-columns:88px 1fr 5rem 5rem;gap:.5rem;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--c-text2);padding:.2rem .3rem;border-radius:2px; }
+  .rm-preview-row:nth-child(odd) { background:var(--c-subtle); }
+  .rm-preview-empty { font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--c-faint);padding:.5rem; }
+  .rule-modal-actions { display:flex;gap:.75rem;justify-content:flex-end;border-top:1px solid var(--c-border);padding-top:.75rem;flex-shrink:0; }
+  .rm-apply-btn { font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;background:var(--c-green-bg);color:var(--c-green-t);border:1px solid var(--c-green-bd);padding:.4rem 1rem;border-radius:3px;cursor:pointer; }
+  .rm-skip-btn  { font-family:'IBM Plex Mono',monospace;font-size:11px;background:transparent;border:1px solid var(--c-border);color:var(--c-muted);padding:.4rem .9rem;border-radius:3px;cursor:pointer; }
 </style>
 {% endblock %}
 
@@ -138,6 +158,7 @@
            data-txn-id="{{ item.transaction_id }}"
            data-severity="{{ item.severity }}"
            data-desc="{{ item.description | lower }}"
+           data-desc-raw="{{ item.description | e }}"
            data-date="{{ item.transaction_date }}">
 
         <span><input type="checkbox" class="row-cb bulk-cb" data-id="{{ item.transaction_id }}" onchange="onRowCheck()"></span>
@@ -203,6 +224,56 @@
   </div>
 
 </div>
+
+<!-- Rule suggestion modal -->
+<div id="rule-modal-overlay" class="rule-modal-overlay" style="display:none" onclick="if(event.target===this)closeRuleModal()">
+  <div class="rule-modal-card">
+    <div class="rule-modal-header">
+      <span class="rule-modal-title">Auto-resolve similar items?</span>
+      <button class="rule-modal-close" onclick="closeRuleModal()">✕</button>
+    </div>
+    <div class="rule-modal-form">
+      <div class="rm-field-row">
+        <label>Pattern</label>
+        <input id="rm-pattern" type="text" oninput="debouncedPreview()">
+      </div>
+      <div class="rm-field-row">
+        <label>Match type</label>
+        <select id="rm-match-type" onchange="debouncedPreview()">
+          <option value="contains">contains</option>
+          <option value="exact">exact</option>
+          <option value="regex">regex</option>
+        </select>
+      </div>
+      <div class="rm-field-row">
+        <label>Category</label>
+        <select id="rm-category">
+          <option value="">— uncategorized —</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="rm-field-row">
+        <label>Money type</label>
+        <div class="mtype-btns" id="rm-mtype-btns">
+          <button type="button" class="mtype-btn exp" onclick="setRmMtype('expense',this)">Exp</button>
+          <button type="button" class="mtype-btn inc" onclick="setRmMtype('income',this)">Inc</button>
+          <button type="button" class="mtype-btn reimb" onclick="setRmMtype('reimbursement',this)">Reimb</button>
+          <button type="button" class="mtype-btn trf" onclick="setRmMtype('transfer',this)">Trf</button>
+        </div>
+      </div>
+    </div>
+    <div class="rule-modal-preview-header">
+      Matching open items: <span id="rm-match-count">0</span>
+    </div>
+    <div id="rm-preview-list" class="rm-preview-list"></div>
+    <div class="rule-modal-actions">
+      <button type="button" class="rm-apply-btn" onclick="createRuleAndResolveAll()">Create Rule &amp; Resolve All</button>
+      <button type="button" class="rm-skip-btn"  onclick="closeRuleModal()">Skip</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -227,20 +298,117 @@
   // ── Single resolve ────────────────────────────────────────────────────────
   let remainingCount = {{ items|length }};
   function resolveItem(txnId, btn) {
-    const row   = document.getElementById('rq-row-' + txnId);
-    const catId = document.getElementById('cat-' + txnId).value;
-    const mtype = mtypeState[txnId] || row.querySelector('.mtype-btn.selected')?.classList.contains('exp') ? 'expense' : 'income';
+    const row    = document.getElementById('rq-row-' + txnId);
+    const catId  = document.getElementById('cat-' + txnId).value;
+    const mtype  = mtypeState[txnId] || 'expense';
+    const desc   = row.dataset.descRaw || row.dataset.desc;
 
     row.classList.add('resolving');
     btn.textContent = '…';
     fetch(`/api/review/${txnId}/resolve`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({category_id: catId || null, money_type: mtypeState[txnId] || 'expense'}),
+      body: JSON.stringify({category_id: catId || null, money_type: mtype}),
     }).then(r => r.json()).then(data => {
       row.remove();
       updateCounts(data.remaining);
       applyFilters();
+      checkRuleSuggestion(desc, catId, mtype);
     }).catch(() => { row.classList.remove('resolving'); btn.textContent = '✓ Resolve'; });
+  }
+
+  // ── Rule suggestion modal ─────────────────────────────────────────────────
+  let rmMtype   = 'expense';
+  let rmMatches = [];
+
+  function checkRuleSuggestion(desc, catId, mtype) {
+    if (!desc) return;
+    const pattern = desc.trim();
+    Promise.all([
+      fetch(`/api/review/rule-preview?pattern=${encodeURIComponent(pattern)}&match_type=exact`).then(r => r.json()),
+      fetch(`/api/review/rule-preview?pattern=${encodeURIComponent(pattern)}&match_type=contains`).then(r => r.json()),
+    ]).then(([exact, contains]) => {
+      if (exact.count > 0 && exact.count === contains.count) {
+        openRuleModal(pattern, catId, mtype, exact, 'exact');
+      } else if (contains.count > 0) {
+        openRuleModal(pattern, catId, mtype, contains, 'contains');
+      }
+    }).catch(console.error);
+  }
+
+  function openRuleModal(pattern, catId, mtype, previewData, matchType) {
+    document.getElementById('rm-pattern').value = pattern;
+    document.getElementById('rm-match-type').value = matchType || 'contains';
+    if (catId) document.getElementById('rm-category').value = catId;
+    rmMtype = mtype || 'expense';
+    document.querySelectorAll('#rm-mtype-btns .mtype-btn').forEach(b => b.classList.remove('selected'));
+    const cls = {expense:'exp',income:'inc',reimbursement:'reimb',transfer:'trf'}[rmMtype] || 'exp';
+    document.querySelector(`#rm-mtype-btns .${cls}`)?.classList.add('selected');
+    renderRmPreview(previewData);
+    document.getElementById('rule-modal-overlay').style.display = 'flex';
+  }
+
+  function closeRuleModal() {
+    document.getElementById('rule-modal-overlay').style.display = 'none';
+    rmMatches = [];
+  }
+
+  function setRmMtype(mtype, btn) {
+    rmMtype = mtype;
+    document.querySelectorAll('#rm-mtype-btns .mtype-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  }
+
+  function renderRmPreview(data) {
+    rmMatches = data.matches || [];
+    document.getElementById('rm-match-count').textContent = data.count;
+    const list = document.getElementById('rm-preview-list');
+    if (!rmMatches.length) {
+      list.innerHTML = '<div class="rm-preview-empty">No matching open items.</div>';
+      return;
+    }
+    list.innerHTML = rmMatches.slice(0, 50).map(m => {
+      const amt = typeof m.amount === 'number' ? m.amount.toFixed(2) : m.amount;
+      return `<div class="rm-preview-row"><span>${m.date}</span><span>${escHtml(m.description)}</span><span>${escHtml(m.currency||'')}</span><span style="text-align:right">${amt}</span></div>`;
+    }).join('');
+  }
+
+  let rmPreviewTimer = null;
+  function debouncedPreview() {
+    clearTimeout(rmPreviewTimer);
+    rmPreviewTimer = setTimeout(() => {
+      const pattern   = document.getElementById('rm-pattern').value.trim();
+      const matchType = document.getElementById('rm-match-type').value;
+      if (!pattern) { renderRmPreview({matches:[],count:0}); return; }
+      fetch(`/api/review/rule-preview?pattern=${encodeURIComponent(pattern)}&match_type=${matchType}`)
+        .then(r => r.json()).then(renderRmPreview);
+    }, 300);
+  }
+
+  function createRuleAndResolveAll() {
+    const pattern   = document.getElementById('rm-pattern').value.trim();
+    const matchType = document.getElementById('rm-match-type').value;
+    const catId     = document.getElementById('rm-category').value || null;
+    const txnIds    = rmMatches.map(m => m.txn_id);
+    if (!txnIds.length) { closeRuleModal(); return; }
+    if (!pattern)       { alert('Pattern is required.'); return; }
+
+    fetch('/api/review/create-rule-and-resolve', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pattern, match_type: matchType, category_id: catId,
+                            money_type: rmMtype, confidence: 'high', txn_ids: txnIds}),
+    }).then(r => r.json()).then(data => {
+      txnIds.forEach(id => document.getElementById('rq-row-' + id)?.remove());
+      const remaining = typeof data.remaining === 'number'
+        ? data.remaining
+        : document.querySelectorAll('.rq-row[data-txn-id]').length;
+      updateCounts(remaining);
+      applyFilters();
+      closeRuleModal();
+    }).catch(console.error);
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function updateCounts(remaining) {
