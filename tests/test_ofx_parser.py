@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from parsers.ofx import parse, reconcile, extract_ledger_balance, extract_account_info
+from parsers.ofx import parse, reconcile, extract_ledger_balance, extract_account_info, extract_statement_end_date
 from persistence.database import init_schema
 from persistence.repositories import (
     AccountRepository, CategoryRepository, VendorRuleRepository,
@@ -346,6 +346,16 @@ def test_extract_ledger_balance_present():
 
 def test_extract_ledger_balance_absent():
     assert extract_ledger_balance(OFX2_CREDIT) is None
+
+
+def test_extract_statement_end_date_uses_dtasof_when_present():
+    # OFX2_CHECKING has DTASOF=20260131 in LEDGERBAL — preferred over DTEND.
+    assert extract_statement_end_date(OFX2_CHECKING) == "2026-01"
+
+
+def test_extract_statement_end_date_falls_back_to_dtend():
+    # OFX2_CREDIT has DTEND=20260131 but no LEDGERBAL/DTASOF.
+    assert extract_statement_end_date(OFX2_CREDIT) == "2026-01"
 
 
 # ── Account info extraction ────────────────────────────────────────────────────

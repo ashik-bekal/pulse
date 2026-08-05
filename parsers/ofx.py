@@ -123,6 +123,22 @@ def extract_ledger_balance(text: str) -> Optional[float]:
         return None
 
 
+def extract_statement_end_date(text: str) -> Optional[str]:
+    """
+    Return the best available statement-end date as 'YYYY-MM' for snapshot
+    month keying.  Priority: DTASOF (LEDGERBAL date) > DTEND > None.
+    """
+    try:
+        stmt = _ofx(text).account.statement
+        for attr in ("balance_date", "end_date"):
+            dt = getattr(stmt, attr, None)
+            if dt is not None:
+                return dt.strftime("%Y-%m")
+    except Exception:
+        pass
+    return None
+
+
 def extract_account_info(text: str) -> dict:
     """
     Extract account metadata from an OFX file for auto-detection.
