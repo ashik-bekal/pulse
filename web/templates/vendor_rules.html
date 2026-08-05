@@ -193,6 +193,33 @@
     border: none; border-radius: 3px;
     padding: 6px 12px; cursor: pointer;
   }
+  .edit-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: transparent; color: var(--c-accent);
+    border: 1px solid var(--c-accent-bd); border-radius: 2px;
+    padding: 3px 8px; cursor: pointer;
+  }
+  .edit-btn:hover { background: var(--c-accent-bg); }
+  .vr-edit-cell { padding: 6px 8px; }
+  .vr-edit-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .vr-edit-form input, .vr-edit-form select {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    padding: 3px 6px; border: 1px solid var(--c-border); border-radius: 3px;
+    background: var(--c-bg); color: var(--c-text);
+  }
+  .vr-edit-form .vr-edit-pattern { flex: 1; min-width: 140px; }
+  .vr-edit-save-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
+    background: var(--c-green-bg); color: var(--c-green-t);
+    border: 1px solid var(--c-green-bd); border-radius: 2px;
+    padding: 3px 10px; cursor: pointer;
+  }
+  .vr-edit-cancel-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: transparent; color: var(--c-faint);
+    border: 1px solid var(--c-border); border-radius: 2px;
+    padding: 3px 8px; cursor: pointer;
+  }
 </style>
 {% endblock %}
 
@@ -278,7 +305,12 @@
 
     {% if rules %}
       {% for r in rules %}
-      <div class="vr-row vr-cols {% if r.is_pending %}pending{% endif %}" id="vr-row-{{ r.id }}">
+      <div class="vr-row vr-cols {% if r.is_pending %}pending{% endif %}" id="vr-row-{{ r.id }}"
+           data-pattern="{{ r.pattern | e }}"
+           data-match-type="{{ r.match_type }}"
+           data-cat-id="{{ r.category_id or '' }}"
+           data-money-type="{{ r.money_type or '' }}"
+           data-confidence="{{ r.confidence }}">
 
         <span><input type="checkbox" class="row-cb bulk-cb" data-id="{{ r.id }}" onchange="onRowCheck()"></span>
 
@@ -317,6 +349,7 @@
             <button type="submit" class="reject-btn">✕ Reject</button>
           </form>
           {% else %}
+          <button type="button" class="edit-btn" onclick="startEdit({{ r.id }})">✎ Edit</button>
           <form method="post" action="{{ url_for('delete_vendor_rule', rule_id=r.id) }}"
                 onsubmit="return confirm('Delete rule for «{{ r.pattern }}»?')">
             <button type="submit" class="del-btn">✕ Del</button>
@@ -408,6 +441,72 @@
     }).then(r => r.json()).then(() => {
       window.location.reload();
     }).catch(console.error);
+  }
+
+  // ── Inline edit rule ──────────────────────────────────────────────────────
+  const vrCategories = [{% for c in categories %}{"id":{{ c.id }},"name":{{ c.name | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}];
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function startEdit(ruleId) {
+    const row = document.getElementById('vr-row-' + ruleId);
+    row._savedHTML = row.innerHTML;
+
+    const p  = row.dataset.pattern    || '';
+    const mt = row.dataset.matchType  || 'contains';
+    const ci = row.dataset.catId      || '';
+    const mo = row.dataset.moneyType  || 'expense';
+    const co = row.dataset.confidence || 'high';
+
+    const catOptions = vrCategories.map(c =>
+      `<option value="${c.id}"${String(c.id) === ci ? ' selected' : ''}>${escHtml(c.name)}</option>`
+    ).join('');
+
+    const matchOpts  = ['contains','exact','regex'].map(v =>
+      `<option${v === mt ? ' selected' : ''}>${v}</option>`).join('');
+    const mtypeOpts  = ['expense','income','reimbursement','transfer','loan_repayment'].map(v =>
+      `<option${v === mo ? ' selected' : ''}>${v}</option>`).join('');
+    const confOpts   = ['high','medium','low'].map(v =>
+      `<option${v === co ? ' selected' : ''}>${v}</option>`).join('');
+
+    row.innerHTML = `
+      <div style="grid-column:1/-1" class="vr-edit-cell">
+        <div class="vr-edit-form">
+          <input class="vr-edit-pattern" value="${escHtml(p)}" placeholder="Pattern">
+          <select class="vr-edit-match">${matchOpts}</select>
+          <select class="vr-edit-cat"><option value="">— none —</option>${catOptions}</select>
+          <select class="vr-edit-mtype">${mtypeOpts}</select>
+          <select class="vr-edit-conf">${confOpts}</select>
+          <button type="button" class="vr-edit-save-btn" onclick="saveEdit(${ruleId})">Save</button>
+          <button type="button" class="vr-edit-cancel-btn" onclick="cancelEdit(${ruleId})">Cancel</button>
+        </div>
+      </div>`;
+  }
+
+  function saveEdit(ruleId) {
+    const row        = document.getElementById('vr-row-' + ruleId);
+    const pattern    = row.querySelector('.vr-edit-pattern').value.trim();
+    const match_type = row.querySelector('.vr-edit-match').value;
+    const category_id = row.querySelector('.vr-edit-cat').value || null;
+    const money_type = row.querySelector('.vr-edit-mtype').value;
+    const confidence = row.querySelector('.vr-edit-conf').value;
+
+    if (!pattern) { alert('Pattern is required.'); return; }
+
+    fetch(`/vendor-rules/${ruleId}/edit`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pattern, match_type, category_id, money_type, confidence}),
+    }).then(r => r.json()).then(data => {
+      if (data.ok) window.location.reload();
+      else alert('Save failed: ' + (data.error || 'unknown error'));
+    }).catch(console.error);
+  }
+
+  function cancelEdit(ruleId) {
+    const row = document.getElementById('vr-row-' + ruleId);
+    if (row._savedHTML) row.innerHTML = row._savedHTML;
   }
 </script>
 {% endblock %}

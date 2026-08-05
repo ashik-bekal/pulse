@@ -662,6 +662,56 @@ def api_resolve_review(txn_id):
     return jsonify({"ok": True, "remaining": remaining})
 
 
+@app.route("/api/review/rule-preview")
+def api_rule_preview():
+    pattern    = request.args.get("pattern", "").strip()
+    match_type = request.args.get("match_type", "contains")
+    if not pattern:
+        return jsonify({"matches": [], "count": 0})
+    with closing(get_connection()) as conn:
+        rows = ReviewQueueRepository(conn).list_open_matching(pattern, match_type)
+    matches = [
+        {"txn_id": r["transaction_id"], "description": r["description"],
+         "date": r["transaction_date"], "amount": r["transaction_amount"],
+         "currency": r["transaction_currency"], "account": r["account_name"]}
+        for r in rows
+    ]
+    return jsonify({"matches": matches, "count": len(matches)})
+
+
+@app.route("/api/review/create-rule-and-resolve", methods=["POST"])
+def api_create_rule_and_resolve():
+    data        = request.get_json() or {}
+    pattern     = (data.get("pattern") or "").strip()
+    match_type  = data.get("match_type", "contains")
+    category_id = data.get("category_id")
+    money_type  = data.get("money_type", "expense")
+    confidence  = data.get("confidence", "high")
+    txn_ids     = data.get("txn_ids", [])
+
+    if not pattern or not txn_ids:
+        return jsonify({"ok": False, "error": "pattern and txn_ids required"}), 400
+
+    with closing(get_connection()) as conn:
+        vr_repo     = VendorRuleRepository(conn)
+        review_repo = ReviewQueueRepository(conn)
+        txn_repo    = TransactionRepository(conn)
+        audit_repo  = AuditLogRepository(conn)
+
+        vr_repo.add_rule(pattern, match_type, category_id or None, money_type, confidence, is_pending=False)
+
+        for txn_id in txn_ids:
+            old_cat = txn_repo.update_categorization(txn_id, category_id, money_type, None)
+            audit_repo.record("transaction", txn_id, "category_id", old_cat, category_id,
+                              "Resolved via rule suggestion")
+            review_repo.resolve_for_transaction(txn_id)
+
+        conn.commit()
+        remaining = review_repo.count_open()
+
+    return jsonify({"ok": True, "resolved": len(txn_ids), "remaining": remaining})
+
+
 @app.route("/categories")
 def categories_view():
     with closing(get_connection()) as conn:
@@ -1179,6 +1229,22 @@ def reject_vendor_rule(rule_id):
         VendorRuleRepository(conn).deactivate(rule_id)
         conn.commit()
     return redirect(url_for("vendor_rules_view"))
+
+
+@app.route("/vendor-rules/<int:rule_id>/edit", methods=["POST"])
+def edit_vendor_rule(rule_id):
+    data        = request.get_json() or {}
+    pattern     = (data.get("pattern") or "").strip()
+    match_type  = data.get("match_type", "contains")
+    category_id = data.get("category_id") or None
+    money_type  = data.get("money_type", "expense")
+    confidence  = data.get("confidence", "high")
+    if not pattern:
+        return jsonify({"ok": False, "error": "pattern required"}), 400
+    with closing(get_connection()) as conn:
+        VendorRuleRepository(conn).update_rule(rule_id, pattern, match_type, category_id, money_type, confidence)
+        conn.commit()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/vendor-rules/bulk-approve", methods=["POST"])

@@ -231,6 +231,15 @@ class VendorRuleRepository:
             ORDER BY vr.is_pending DESC, LENGTH(vr.pattern) DESC
         """).fetchall()
 
+    def update_rule(self, rule_id: int, pattern: str, match_type: str,
+                    category_id, money_type: str, confidence: str) -> None:
+        self.conn.execute("""
+            UPDATE vendor_rules
+            SET pattern=?, match_type=?, category_id=?, money_type=?, confidence=?,
+                updated_at=datetime('now')
+            WHERE id=?
+        """, (pattern, match_type, category_id or None, money_type, confidence, rule_id))
+
 
 class ExchangeRateRepository:
     def __init__(self, conn: sqlite3.Connection):
@@ -636,6 +645,33 @@ class ReviewQueueRepository:
             "UPDATE review_queue SET status='resolved', resolved_at=datetime('now') WHERE transaction_id=?",
             (transaction_id,),
         )
+
+    def list_open_matching(self, pattern: str, match_type: str) -> List[sqlite3.Row]:
+        base_select = """
+            SELECT r.transaction_id, t.description, t.transaction_date,
+                   t.transaction_amount, t.transaction_currency, a.display_name as account_name
+            FROM review_queue r
+            JOIN transactions t ON r.transaction_id = t.id
+            JOIN accounts a ON t.account_id = a.id
+            WHERE r.status = 'open' AND t.is_hidden = 0
+        """
+        if match_type == "contains":
+            return self.conn.execute(
+                base_select + " AND UPPER(t.description) LIKE '%' || UPPER(?) || '%' ORDER BY t.transaction_date DESC LIMIT 100",
+                (pattern,),
+            ).fetchall()
+        if match_type == "exact":
+            return self.conn.execute(
+                base_select + " AND UPPER(t.description) = UPPER(?) ORDER BY t.transaction_date DESC LIMIT 100",
+                (pattern,),
+            ).fetchall()
+        # regex — filter in Python
+        import re
+        all_rows = self.conn.execute(base_select + " ORDER BY t.transaction_date DESC").fetchall()
+        try:
+            return [r for r in all_rows if re.search(pattern, r["description"], re.IGNORECASE)][:100]
+        except re.error:
+            return []
 
 
 class AuditLogRepository:
