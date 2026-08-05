@@ -100,14 +100,15 @@ class AccountRepository:
 
     def list_all_importable(self) -> List[sqlite3.Row]:
         """
-        Every active account wired to any PDF parser, for the import
-        screen's single top-level account picker (one dropdown covering all
-        formats, instead of picking a format first and an account second).
+        All active accounts for the import screen's account picker. PDF-parser
+        accounts are grouped by format; null-format accounts appear under the
+        OFX / manual group since OFX files can target any account.
         """
         return self.conn.execute("""
             SELECT id, account_code, display_name, statement_format FROM accounts
-            WHERE statement_format IS NOT NULL AND is_active = 1
-            ORDER BY statement_format, display_name
+            WHERE is_active = 1
+            ORDER BY CASE WHEN statement_format IS NULL THEN 1 ELSE 0 END,
+                     statement_format, display_name
         """).fetchall()
 
 

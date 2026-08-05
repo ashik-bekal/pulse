@@ -135,9 +135,9 @@
       </div>
       <div class="add-form-row2" style="margin-top:10px">
         <div>
-          <label class="af-label">Statement format (for PDF import)</label>
+          <label class="af-label">PDF statement format</label>
           <select class="af-select" name="statement_format">
-            <option value="">— none / manual only —</option>
+            <option value="">— none (OFX / manual) —</option>
             <option value="hsbc">HSBC UK</option>
             <option value="chase_bank">Chase Checking / Savings</option>
             <option value="sapphire">Chase Sapphire Reserve</option>
@@ -170,7 +170,7 @@
       <div>
         <div class="a-name">{{ a.display_name }}</div>
         {% if a.institution %}<div class="a-sub">{{ a.institution }}</div>{% endif %}
-        {% if a.statement_format %}<div class="a-sub" style="color:var(--c-accent)">PDF import: {{ a.statement_format }}</div>{% endif %}
+        {% if a.statement_format %}<div class="a-sub" style="color:var(--c-accent)">PDF: {{ a.statement_format }}</div>{% elif a.account_number_last4 %}<div class="a-sub" style="color:var(--c-accent-t,var(--c-accent))">OFX / manual</div>{% endif %}
       </div>
       <div>
         <span class="a-type-pill type-{{ a.account_type }}">{{ a.account_type | replace('_',' ') }}</span>

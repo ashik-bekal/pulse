@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Master Ledger{% endblock %}</title>
+  <script>document.documentElement.setAttribute('data-theme',localStorage.getItem('ledger_theme')||'dark');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -401,9 +402,9 @@
          ondragleave="this.classList.remove('drag-over')"
          ondrop="event.preventDefault();this.classList.remove('drag-over');handleFiles(event.dataTransfer.files)">
       <div class="imp-dropzone-icon">↧</div>
-      <div class="imp-dropzone-text">Drop PDF statements here or <span>click to browse</span></div>
+      <div class="imp-dropzone-text">Drop PDF or OFX statements here or <span>click to browse</span></div>
     </div>
-    <input type="file" id="imp-file-input" accept=".pdf" multiple style="display:none"
+    <input type="file" id="imp-file-input" accept=".pdf,.ofx,.qfx" multiple style="display:none"
            onchange="handleFiles(this.files)">
 
     <!-- File cards -->
@@ -486,7 +487,7 @@
   const cards = {};
   let pollTimer = null;
 
-  const FORMAT_LABELS = { hsbc: 'HSBC UK', chase_bank: 'Chase Checking / Savings', sapphire: 'Chase Sapphire Reserve' };
+  const FORMAT_LABELS = { hsbc: 'HSBC UK', chase_bank: 'Chase Checking / Savings', sapphire: 'Chase Sapphire Reserve', ofx: 'OFX / QFX', null: 'OFX / Manual' };
 
   // Fetched once and cached — every card's account dropdown reads from this
   // instead of each card making its own round-trip.
@@ -532,7 +533,7 @@
 
   function handleFiles(fileList) {
     for (const file of fileList) {
-      if (!file.name.endsWith('.pdf')) continue;
+      if (!/\.(pdf|ofx|qfx)$/i.test(file.name)) continue;
       const id = Math.random().toString(36).slice(2);
       const el = buildCard(id, file.name);
       cards[id] = { state: 'detecting', filename: file.name, tempId: null, element: el };
@@ -581,15 +582,24 @@
 
   function detectFile(id, file) {
     const fd = new FormData();
-    fd.append('pdf', file);
+    fd.append('file', file);
     fetch('/api/import/detect', { method: 'POST', body: fd })
       .then(r => r.json())
       .then(data => {
         if (!cards[id]) return;
-        cards[id].tempId = data.temp_id;
-        cards[id].state  = 'detected';
+        cards[id].tempId   = data.temp_id;
+        cards[id].fileExt  = data.file_ext || 'pdf';
+        cards[id].state    = 'detected';
 
-        // Pre-fill period fields
+        // OFX dates come from the file itself — Year/Month inputs are not needed.
+        if (data.file_ext === 'ofx') {
+          const yearEl  = document.getElementById('fc-year-'  + id);
+          const monthEl = document.getElementById('fc-month-' + id);
+          if (yearEl?.parentElement)  yearEl.parentElement.style.display  = 'none';
+          if (monthEl?.parentElement) monthEl.parentElement.style.display = 'none';
+        }
+
+        // Pre-fill period fields (PDF parsers that need year/month context)
         if (data.year)        document.getElementById('fc-year-' + id).value  = data.year;
         if (data.start_month) document.getElementById('fc-month-' + id).value = data.start_month;
         updatePeriod(id);
@@ -597,13 +607,14 @@
         // Pre-select the account: prefer an exact account-number match (best —
         // works even when several accounts share the same statement format),
         // otherwise fall back to the one account for that format if it's the
-        // only candidate, otherwise leave it for the user to pick.
+        // only candidate. OFX files skip the format fallback since every
+        // account is a valid OFX target — the user picks if last4 didn't match.
         ensureAccountsLoaded().then(accounts => {
           const select = document.getElementById('fc-acct-' + id);
           if (!select) return;
           if (data.matched_account_id) {
             select.value = String(data.matched_account_id);
-          } else if (data.account_type) {
+          } else if (data.account_type && data.account_type !== 'ofx') {
             const candidates = accounts.filter(a => a.format === data.account_type);
             if (candidates.length === 1) select.value = String(candidates[0].id);
           }
@@ -636,7 +647,11 @@
       setStatus(id, '⚠ Select an account before importing — detection could not identify this statement', 'warn');
       return;
     }
-    const acctType = (allAccountsCache || []).find(a => a.id === targetAccountId)?.format;
+    // For OFX files the import parser comes from the file (always 'ofx'),
+    // not from the account's PDF statement_format (which may be null).
+    const acctType = card.fileExt === 'ofx'
+      ? 'ofx'
+      : (allAccountsCache || []).find(a => a.id === targetAccountId)?.format;
     if (!acctType) {
       setStatus(id, '✗ Could not resolve the selected account\'s statement format — try re-opening the import screen', 'err');
       return;
@@ -652,6 +667,7 @@
         temp_id: card.tempId, filename: card.filename,
         account_type: acctType, year, start_month: startMonth,
         target_account_id: targetAccountId,
+        file_ext: card.fileExt || 'pdf',
       }),
     })
     .then(r => r.json())

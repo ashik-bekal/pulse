@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     opened_date TEXT,
     closed_date TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
-    statement_format TEXT CHECK(statement_format IN ('hsbc','chase_bank','sapphire') OR statement_format IS NULL),
+    statement_format TEXT CHECK(statement_format IN ('hsbc','chase_bank','sapphire','ofx') OR statement_format IS NULL),
     -- which PDF parser this account's statements use, if any. When more than
     -- one account shares a format (e.g. two people's Chase Checking
     -- accounts), the import screen shows a target-account picker instead of
