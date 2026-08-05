@@ -418,3 +418,23 @@ def test_reimport_is_idempotent_via_fingerprint(conn):
     inserted2, skipped2 = ingest_transactions(txns, account_id, "jan2026.ofx",
                                               skip_statement_check=True, **_repos(conn))
     assert len(inserted2) == 0 and skipped2 == 3
+
+
+def test_ofx_credit_card_positive_tagged_as_reimbursement(conn):
+    """Unmatched positive OFX entries on a credit card account are reimbursements, not income."""
+    conn.execute("""
+        INSERT INTO accounts (account_code, display_name, account_type, currency, owner_id, statement_format)
+        VALUES ('US_CREDIT_CARD', 'US Credit Card', 'credit_card', 'USD', 1, 'ofx')
+    """)
+    conn.commit()
+    txns = parse(OFX2_CREDIT)
+    account_id = conn.execute("SELECT id FROM accounts WHERE account_code='US_CREDIT_CARD'").fetchone()["id"]
+    inserted, _ = ingest_transactions(txns, account_id, "cc_jan2026.ofx",
+                                      is_credit_card=True, skip_statement_check=True, **_repos(conn))
+    rows = {r["settlement_amount"]: r["money_type"]
+            for r in conn.execute(
+                f"SELECT settlement_amount, money_type FROM transactions WHERE id IN ({','.join('?' * len(inserted))})",
+                inserted,
+            ).fetchall()}
+    assert rows[500.0] == "reimbursement"
+    assert rows[-80.0] == "expense"
