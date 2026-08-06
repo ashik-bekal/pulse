@@ -317,6 +317,13 @@ def transactions():
     month_filter      = request.args.get("year_month",  "")
     desc_filter       = request.args.get("description", "")
 
+    PAGE_SIZE_OPTIONS = [50, 100, 200, 500]
+    page      = _int_arg("page", 1, minimum=1)
+    page_size = _int_arg("page_size", 100, minimum=1)
+    if page_size not in PAGE_SIZE_OPTIONS:
+        page_size = 100
+    offset    = (page - 1) * page_size
+
     with closing(get_connection()) as conn:
         txn_repo = TransactionRepository(conn)
         filter_kwargs = dict(
@@ -326,7 +333,12 @@ def transactions():
             year_month=month_filter or None,
             description=desc_filter or None,
         )
-        rows   = txn_repo.list_filtered(**filter_kwargs)
+        total_count = txn_repo.count_filtered(**filter_kwargs)
+        total_pages = max(1, -(-total_count // page_size))  # ceil div
+        page = min(page, total_pages)
+        offset = (page - 1) * page_size
+
+        rows   = txn_repo.list_filtered(**filter_kwargs, limit=page_size, offset=offset)
         totals = txn_repo.totals_for_filtered(**filter_kwargs)
         accounts       = AccountRepository(conn).list_active()
         categories     = CategoryRepository(conn).list_all()
@@ -346,6 +358,11 @@ def transactions():
         confidence_filter=confidence_filter,
         month_filter=month_filter,
         desc_filter=desc_filter,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        page_size=page_size,
+        page_size_options=PAGE_SIZE_OPTIONS,
     )
 
 
