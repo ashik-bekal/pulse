@@ -35,3 +35,6 @@ Thumbs.db
 # App-generated temp files
 uploads/
 tmp/
+
+# Local design notes, not for public repo
+blueprints/

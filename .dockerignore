@@ -1,0 +1,14 @@
+data/
+*.db
+*.db-shm
+*.db-wal
+*.pdf
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.DS_Store
+.claude/

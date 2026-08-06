@@ -41,6 +41,14 @@ python3 web/app.py              # http://127.0.0.1:5001
 
 Prefer an empty ledger? `python3 cli/init_db.py` instead of the seed.
 
+Or Docker, one command:
+
+```bash
+docker compose up
+```
+
+Serves at http://127.0.0.1:5001, data persists in `./data`.
+
 Import statements from the UI (Import button) or the CLI:
 
 ```bash

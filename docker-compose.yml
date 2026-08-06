@@ -1,0 +1,12 @@
+services:
+  pulse:
+    build: .
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PULSE_SECRET_KEY=${PULSE_SECRET_KEY:-}
+      - PULSE_LOG_LEVEL=${PULSE_LOG_LEVEL:-INFO}
+      - PULSE_MAX_UPLOAD_MB=${PULSE_MAX_UPLOAD_MB:-16}
+    restart: unless-stopped
