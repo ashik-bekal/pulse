@@ -1,5 +1,7 @@
 # PULSE — Personal Unified Ledger & Spending Engine
 
+![Tests](https://github.com/ashik-bekal/pulse/actions/workflows/tests.yml/badge.svg)
+
 Turn bank statement PDFs into a reconciled, categorized, multi-currency
 personal ledger — local-first, SQLite-backed, no cloud, no accounts.
 
