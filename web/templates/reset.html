@@ -105,6 +105,7 @@
 
   <form method="post" action="{{ url_for('reset_period') }}"
         onsubmit="return confirm('Delete all transactions for the selected period? This cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="period-form">
       <div class="period-row">
         <div>
@@ -145,6 +146,7 @@
 
   <form method="post" action="{{ url_for('hide_period') }}"
         onsubmit="return confirm('Hide all transactions for the selected period across every account? Data is kept, just hidden from views.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="period-form">
       <div class="period-row" style="grid-template-columns:1fr">
         <div>
@@ -193,6 +195,7 @@
 
   <div class="reset-confirm-label">Type <span>RESET</span> to confirm</div>
   <form method="post" action="{{ url_for('reset_data') }}" onsubmit="return checkConfirm()">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input class="reset-input" id="confirm-input" name="confirm" placeholder="RESET"
            oninput="document.getElementById('reset-submit').disabled = this.value !== 'RESET'" autocomplete="off">
     <button class="reset-btn" id="reset-submit" type="submit" disabled>Delete all imported data</button>

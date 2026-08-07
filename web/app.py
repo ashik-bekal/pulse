@@ -34,6 +34,11 @@ app = Flask(__name__)
 # reset on restart; production must set it explicitly.
 app.config["SECRET_KEY"] = os.environ.get("PULSE_SECRET_KEY") or os.urandom(32).hex()
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PULSE_MAX_UPLOAD_MB", "16")) * 1024 * 1024
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+from web.csrf import init_csrf
+init_csrf(app)
 
 
 logging.basicConfig(
