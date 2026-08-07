@@ -218,6 +218,7 @@
   <div class="vr-add-form" id="vr-add-form">
     <div class="vr-add-form-title">New vendor rule</div>
     <form method="post" action="{{ url_for('add_vendor_rule') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="vr-form-grid">
         <div class="vr-field">
           <label class="vr-label" for="f-pattern">Pattern (substring / prefix)</label>
@@ -310,15 +311,18 @@
         <div class="vr-actions">
           {% if r.is_pending %}
           <form method="post" action="{{ url_for('approve_vendor_rule', rule_id=r.id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="approve-btn">✓ Approve</button>
           </form>
           <form method="post" action="{{ url_for('reject_vendor_rule', rule_id=r.id) }}"
                 onsubmit="return confirm('Reject suggested rule for «{{ r.pattern }}»?')" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="reject-btn">✕ Reject</button>
           </form>
           {% else %}
           <form method="post" action="{{ url_for('delete_vendor_rule', rule_id=r.id) }}"
                 onsubmit="return confirm('Delete rule for «{{ r.pattern }}»?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="del-btn">✕ Del</button>
           </form>
           {% endif %}

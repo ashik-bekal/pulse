@@ -81,6 +81,7 @@
   <div class="add-form-wrap" id="add-form" style="display:none">
     <div style="font-family:'Spectral',serif;font-size:15px;font-weight:600;margin-bottom:12px;color:var(--c-text2)">New account</div>
     <form method="post" action="{{ url_for('add_account') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="add-form-grid">
         <div>
           <label class="af-label">Code *</label>
@@ -184,6 +185,7 @@
         </span>
         <form class="ob-form" id="ob-form-{{ a.id }}" method="post"
               action="{{ url_for('set_opening_balance', acct_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input class="ob-input" name="opening_balance_native" type="number" step="0.01"
                  value="{{ a.opening_balance_native if a.opening_balance_native is not none else '' }}"
                  placeholder="0.00">
@@ -202,6 +204,7 @@
         {% if a.is_active %}
         <form method="post" action="{{ url_for('deactivate_account', acct_id=a.id) }}"
               onsubmit="return confirm('Deactivate {{ a.display_name }}? It will be hidden from dashboards but historical data is kept.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="deact-btn" type="submit">Deactivate</button>
         </form>
         {% endif %}

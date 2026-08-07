@@ -80,6 +80,7 @@
   <div class="cat-add-form" id="cat-add-form">
     <div class="cat-add-title">New category</div>
     <form method="post" action="{{ url_for('add_category') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="cat-form-grid">
         <div class="cat-field">
           <label class="cat-label" for="f-name">Name</label>
@@ -143,6 +144,7 @@
         <div style="text-align:right">
           <form method="post" action="{{ url_for('delete_category', cat_id=c.id) }}"
                 onsubmit="return confirmDel('{{ c.name }}', {{ c.txn_count }})">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="del-btn" {% if c.txn_count > 0 %}disabled title="{{ c.txn_count }} txns — reassign them first"{% endif %}>
               ✕ Del
             </button>
