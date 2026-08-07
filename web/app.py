@@ -1051,10 +1051,9 @@ def reset_data():
     with closing(get_connection()) as conn:
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
                   for t in ("transactions", "review_queue", "account_snapshots", "audit_log")}
-        conn.execute("DELETE FROM review_queue")
+        TransactionRepository(conn).delete_all()  # transactions + review_queue
         conn.execute("DELETE FROM audit_log")
         conn.execute("DELETE FROM account_snapshots")
-        conn.execute("DELETE FROM transactions")
         log.warning("RESET-DATA: deleted all rows — %s", counts)
         conn.commit()
     return redirect(url_for("dashboard"))
@@ -1068,22 +1067,7 @@ def reset_period():
         return redirect(url_for("reset_data_view"))
 
     with closing(get_connection()) as conn:
-        if account_id:
-            txn_ids = [r[0] for r in conn.execute(
-                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=? AND account_id=?",
-                (year_month, account_id)
-            ).fetchall()]
-        else:
-            txn_ids = [r[0] for r in conn.execute(
-                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=?",
-                (year_month,)
-            ).fetchall()]
-
-        deleted = len(txn_ids)
-        if txn_ids:
-            placeholders = ",".join("?" * len(txn_ids))
-            conn.execute(f"DELETE FROM review_queue WHERE transaction_id IN ({placeholders})", txn_ids)
-            conn.execute(f"DELETE FROM transactions WHERE id IN ({placeholders})", txn_ids)
+        deleted = TransactionRepository(conn).delete_period(year_month, account_id)
 
         if account_id:
             conn.execute(
