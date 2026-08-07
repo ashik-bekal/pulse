@@ -331,6 +331,47 @@ class TransactionRepository:
         )
         return cur.rowcount
 
+    def delete_period(self, year_month: str, account_id: Optional[int] = None) -> int:
+        """
+        Hard-deletes every transaction in one calendar month (+ their
+        review_queue rows), optionally scoped to one account.
+
+        Deliberately the ONLY row-delete method on this repository, besides
+        delete_all() — a transaction must never be removable by any other
+        action (category delete, trip delete, vendor-rule delete all leave
+        transactions untouched; see their own repository methods). Losing a
+        transaction is only ever a deliberate, whole-period decision, never
+        a side effect. tests/test_transaction_deletion_chokepoint.py
+        enforces that no other "DELETE FROM transactions" exists in the
+        codebase — if you need a new way to remove transactions, add it
+        here, not as inline SQL elsewhere.
+        """
+        if account_id:
+            txn_ids = [r[0] for r in self.conn.execute(
+                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=? AND account_id=?",
+                (year_month, account_id)
+            ).fetchall()]
+        else:
+            txn_ids = [r[0] for r in self.conn.execute(
+                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=?",
+                (year_month,)
+            ).fetchall()]
+
+        if txn_ids:
+            placeholders = ",".join("?" * len(txn_ids))
+            self.conn.execute(f"DELETE FROM review_queue WHERE transaction_id IN ({placeholders})", txn_ids)
+            self.conn.execute(f"DELETE FROM transactions WHERE id IN ({placeholders})", txn_ids)
+        return len(txn_ids)
+
+    def delete_all(self) -> int:
+        """Hard-deletes every transaction (+ their review_queue rows).
+        See delete_period()'s docstring — this is the other and ONLY other
+        sanctioned way a transaction row may be removed."""
+        count = self.conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        self.conn.execute("DELETE FROM review_queue")
+        self.conn.execute("DELETE FROM transactions")
+        return count
+
     def available_months(self) -> List[str]:
         return [r[0] for r in self.conn.execute("""
             SELECT DISTINCT substr(transaction_date, 1, 7) as ym

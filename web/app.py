@@ -705,6 +705,7 @@ def delete_category(cat_id):
         result = CategoryRepository(conn).delete(cat_id)
         if result == "deleted":
             conn.commit()
+            log.warning("CATEGORY-DELETE: category_id=%d", cat_id)
     return redirect(url_for("categories_view"))
 
 
@@ -728,6 +729,7 @@ def api_delete_trip(trip_id):
     with closing(get_connection()) as conn:
         TripRepository(conn).delete(trip_id)
         conn.commit()
+        log.warning("TRIP-DELETE: trip_id=%d", trip_id)
     return jsonify({"ok": True})
 
 
@@ -1030,6 +1032,7 @@ def deactivate_account(acct_id):
     with closing(get_connection()) as conn:
         AccountRepository(conn).deactivate(acct_id)
         conn.commit()
+        log.warning("ACCOUNT-DEACTIVATE: account_id=%d", acct_id)
     return redirect(url_for("accounts_view"))
 
 
@@ -1063,10 +1066,12 @@ def reset_data():
     if request.form.get("confirm") != "RESET":
         return redirect(url_for("reset_data_view"))
     with closing(get_connection()) as conn:
-        conn.execute("DELETE FROM review_queue")
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                  for t in ("transactions", "review_queue", "account_snapshots", "audit_log")}
+        TransactionRepository(conn).delete_all()  # transactions + review_queue
         conn.execute("DELETE FROM audit_log")
         conn.execute("DELETE FROM account_snapshots")
-        conn.execute("DELETE FROM transactions")
+        log.warning("RESET-DATA: deleted all rows — %s", counts)
         conn.commit()
     return redirect(url_for("dashboard"))
 
@@ -1079,22 +1084,7 @@ def reset_period():
         return redirect(url_for("reset_data_view"))
 
     with closing(get_connection()) as conn:
-        if account_id:
-            txn_ids = [r[0] for r in conn.execute(
-                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=? AND account_id=?",
-                (year_month, account_id)
-            ).fetchall()]
-        else:
-            txn_ids = [r[0] for r in conn.execute(
-                "SELECT id FROM transactions WHERE substr(transaction_date,1,7)=?",
-                (year_month,)
-            ).fetchall()]
-
-        deleted = len(txn_ids)
-        if txn_ids:
-            placeholders = ",".join("?" * len(txn_ids))
-            conn.execute(f"DELETE FROM review_queue WHERE transaction_id IN ({placeholders})", txn_ids)
-            conn.execute(f"DELETE FROM transactions WHERE id IN ({placeholders})", txn_ids)
+        deleted = TransactionRepository(conn).delete_period(year_month, account_id)
 
         if account_id:
             conn.execute(
@@ -1105,6 +1095,9 @@ def reset_period():
             conn.execute("DELETE FROM account_snapshots WHERE year_month=?", (year_month,))
 
         conn.commit()
+
+    log.warning("RESET-PERIOD: deleted %d transaction(s) for %s%s",
+                deleted, year_month, f" account_id={account_id}" if account_id else "")
 
     acct_label = f" for account {account_id}" if account_id else ""
     msg = f"Deleted {deleted} transaction(s) for {year_month}{acct_label}."
@@ -1128,6 +1121,9 @@ def hide_period():
         hidden_txns = TransactionRepository(conn).hide_month(year_month)
         hidden_snaps = SnapshotRepository(conn).hide_month(year_month)
         conn.commit()
+
+    log.warning("HIDE-PERIOD: hid %d transaction(s), %d snapshot(s) for %s",
+                hidden_txns, hidden_snaps, year_month)
 
     msg = f"Hid {hidden_txns} transaction(s) and {hidden_snaps} snapshot(s) for {year_month}. Data is kept, just excluded from views."
     return redirect(url_for("reset_data_view", msg=msg))
@@ -1156,6 +1152,7 @@ def delete_vendor_rule(rule_id):
     with closing(get_connection()) as conn:
         VendorRuleRepository(conn).deactivate(rule_id)
         conn.commit()
+        log.warning("VENDOR-RULE-DELETE: rule_id=%d", rule_id)
     return redirect(url_for("vendor_rules_view"))
 
 
@@ -1172,6 +1169,7 @@ def reject_vendor_rule(rule_id):
     with closing(get_connection()) as conn:
         VendorRuleRepository(conn).deactivate(rule_id)
         conn.commit()
+        log.warning("VENDOR-RULE-REJECT: rule_id=%d", rule_id)
     return redirect(url_for("vendor_rules_view"))
 
 
@@ -1200,6 +1198,7 @@ def api_bulk_delete_vendor_rules():
         for rule_id in rule_ids:
             repo.deactivate(rule_id)
         conn.commit()
+        log.warning("VENDOR-RULES-BULK-DELETE: %d rule(s): %s", len(rule_ids), rule_ids)
     return jsonify({"ok": True, "removed": len(rule_ids)})
 
 
