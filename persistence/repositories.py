@@ -367,7 +367,8 @@ class TransactionRepository:
 
     def list_filtered(self, account_id: Optional[int] = None, category_id: Optional[int] = None,
                        confidence: Optional[str] = None, year_month: Optional[str] = None,
-                       description: Optional[str] = None, limit: int = 500) -> List[sqlite3.Row]:
+                       description: Optional[str] = None, limit: int = 500,
+                       offset: int = 0) -> List[sqlite3.Row]:
         clause, params = self._filter_clause(account_id, category_id, confidence, year_month, description)
         query = f"""
             SELECT t.*, a.display_name as account_name, c.name as category_name,
@@ -378,10 +379,19 @@ class TransactionRepository:
             LEFT JOIN owners o ON t.owner_id = o.id
             LEFT JOIN trips tr ON t.trip_id = tr.id
             {clause}
-            ORDER BY t.transaction_date DESC LIMIT ?
+            ORDER BY t.transaction_date DESC, t.id DESC LIMIT ? OFFSET ?
         """
-        params = params + [limit]
+        params = params + [limit, offset]
         return self.conn.execute(query, params).fetchall()
+
+    def count_filtered(self, account_id: Optional[int] = None, category_id: Optional[int] = None,
+                        confidence: Optional[str] = None, year_month: Optional[str] = None,
+                        description: Optional[str] = None) -> int:
+        """Total rows matching the same filters as list_filtered(), ignoring
+        its page limit — backs the pager's page count / "N of M" display."""
+        clause, params = self._filter_clause(account_id, category_id, confidence, year_month, description)
+        query = f"SELECT COUNT(*) FROM transactions t {clause}"
+        return self.conn.execute(query, params).fetchone()[0]
 
     def totals_for_filtered(self, account_id: Optional[int] = None, category_id: Optional[int] = None,
                              confidence: Optional[str] = None, year_month: Optional[str] = None,

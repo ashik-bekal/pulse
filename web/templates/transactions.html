@@ -36,6 +36,17 @@
     text-decoration: none;
   }
 
+  /* Pager */
+  .txn-pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 12px 0; }
+  .txn-page-btn {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text2); border-radius: 2px; padding: 6px 12px; cursor: pointer;
+    text-decoration: none;
+  }
+  .txn-page-btn.disabled { opacity: 0.4; pointer-events: none; }
+  .txn-page-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--c-faint); }
+
   /* Table */
   .txn-table { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden; }
   .txn-cols  { grid-template-columns: 28px 90px 80px 1fr 108px 68px 80px 110px 110px 110px 62px; }
@@ -179,7 +190,13 @@
     <a class="txn-clear-btn" href="?{{ [('account_id', account_filter), ('confidence', confidence_filter), ('year_month', month_filter)] | selectattr(1) | map('join', '=') | join('&') }}">✕ Clear</a>
     {% endif %}
 
-    <span class="txn-row-count">{{ transactions|length }} rows shown</span>
+    <select class="filter-sel" name="page_size" onchange="this.form.submit()">
+      {% for n in page_size_options %}
+      <option value="{{ n }}" {{ 'selected' if page_size == n }}>{{ n }} / page</option>
+      {% endfor %}
+    </select>
+
+    <span class="txn-row-count">{{ transactions|length }} of {{ total_count }} rows shown</span>
   </form>
 
   <!-- Table -->
@@ -306,6 +323,15 @@
     </div>
     {% endif %}
   </div>
+
+  {% if total_pages > 1 %}
+  {% set qs = [('account_id', account_filter), ('category_id', category_filter), ('confidence', confidence_filter), ('year_month', month_filter), ('description', desc_filter), ('page_size', page_size)] | selectattr(1) | map('join', '=') | join('&') %}
+  <div class="txn-pager">
+    <a class="txn-page-btn {{ 'disabled' if page <= 1 }}" href="?{{ qs }}&page={{ page - 1 }}">‹ Prev</a>
+    <span class="txn-page-label">Page {{ page }} of {{ total_pages }}</span>
+    <a class="txn-page-btn {{ 'disabled' if page >= total_pages }}" href="?{{ qs }}&page={{ page + 1 }}">Next ›</a>
+  </div>
+  {% endif %}
 
   <!-- Bulk action bar -->
   <div class="bulk-bar" id="bulk-bar">
