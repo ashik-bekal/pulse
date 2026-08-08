@@ -20,7 +20,7 @@ from werkzeug.utils import secure_filename
 from web.import_service import TEMP_DIR, detect_pdf, start_job, get_jobs
 
 from persistence.backup import create_backup
-from persistence.database import get_connection
+from persistence.database import get_connection, get_db_path
 from persistence.migrations import pending_migrations
 from persistence.repositories import (
     AccountRepository, TransactionRepository, CategoryRepository, TripRepository,
@@ -30,24 +30,53 @@ from persistence.repositories import (
 
 app = Flask(__name__)
 
-# All deployment-sensitive settings come from the environment — see
-# .env.example. SECRET_KEY gets a random per-process fallback so a dev
-# instance works out of the box, but anything session-dependent would
-# reset on restart; production must set it explicitly.
-app.config["SECRET_KEY"] = os.environ.get("PULSE_SECRET_KEY") or os.urandom(32).hex()
+logging.basicConfig(
+    level=os.environ.get("PULSE_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+log = logging.getLogger("pulse")
+
+
+def _load_or_create_secret_key() -> str:
+    """PULSE_SECRET_KEY if set (required in production — see .env.example).
+
+    Otherwise, a key is generated once and persisted next to the database
+    (data/.secret_key) so it survives process restarts AND is shared across
+    gunicorn's worker processes. A per-process random fallback (the old
+    behavior) breaks sessions/CSRF unpredictably under >1 worker: each
+    process would sign with a different key, so a cookie set by one worker
+    fails verification on another — see PR #13 for how this was found.
+    """
+    explicit = os.environ.get("PULSE_SECRET_KEY")
+    if explicit:
+        return explicit
+    key_path = os.path.join(os.path.dirname(os.path.abspath(get_db_path())), ".secret_key")
+    try:
+        if os.path.exists(key_path):
+            with open(key_path) as f:
+                key = f.read().strip()
+            if key:
+                return key
+        os.makedirs(os.path.dirname(key_path), exist_ok=True)
+        key = os.urandom(32).hex()
+        with open(key_path, "w") as f:
+            f.write(key)
+        os.chmod(key_path, 0o600)
+        return key
+    except OSError:
+        log.warning("Could not persist a secret key at %s — falling back to a "
+                    "per-process key; sessions/CSRF may break across restarts "
+                    "or multiple workers. Set PULSE_SECRET_KEY to fix.", key_path)
+        return os.urandom(32).hex()
+
+
+app.config["SECRET_KEY"] = _load_or_create_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("PULSE_MAX_UPLOAD_MB", "16")) * 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 from web.csrf import init_csrf
 init_csrf(app)
-
-
-logging.basicConfig(
-    level=os.environ.get("PULSE_LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-log = logging.getLogger("pulse")
 
 
 @app.after_request
