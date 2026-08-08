@@ -69,7 +69,7 @@ All settings are environment variables with safe local defaults — see
 | Variable | Default | Purpose |
 |---|---|---|
 | `PULSE_DB_PATH` | `data/ledger.db` | SQLite location |
-| `PULSE_SECRET_KEY` | random per process | Flask secret (set in production) |
+| `PULSE_SECRET_KEY` | persisted in `data/.secret_key` | Flask secret (set explicitly in production) |
 | `PULSE_HOST` / `PULSE_PORT` | `127.0.0.1` / `5001` | Dev server bind |
 | `PULSE_DEBUG` | `0` | Werkzeug debugger (dev only — it executes code) |
 | `PULSE_MAX_UPLOAD_MB` | `16` | Statement upload cap |
