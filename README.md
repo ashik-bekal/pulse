@@ -96,8 +96,11 @@ PULSE_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") \
   gunicorn -w 2 -b 127.0.0.1:8000 web.app:app
 ```
 
-SQLite in WAL mode handles this app's single-user concurrency fine; back
-up by copying `data/ledger.db` while the app is idle.
+SQLite in WAL mode handles this app's single-user concurrency fine.
+Back up with `python3 cli/backup.py` — it uses SQLite `VACUUM INTO`, which
+is safe while the app is running (a plain file copy is not, under WAL).
+Backups land in `data/backups/` (4 newest kept). The app also snapshots
+automatically before Reset operations and statement imports.
 
 ## Architecture
 
