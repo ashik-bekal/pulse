@@ -43,6 +43,8 @@ python3 web/app.py              # http://127.0.0.1:5001
 
 Prefer an empty ledger? `python3 cli/init_db.py` instead of the seed.
 
+Upgrading an existing ledger after pulling new code: run `python3 cli/migrate.py` to apply any pending schema migrations (`--check` lists them without applying). New installs don't need this — `init_db.py`/`seed_demo.py` create the latest schema.
+
 Or Docker, one command:
 
 ```bash
