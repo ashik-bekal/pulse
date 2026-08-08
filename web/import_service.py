@@ -266,6 +266,12 @@ def _run_job(job_id: str) -> None:
 
     pdf_path = os.path.join(TEMP_DIR, job["temp_id"] + ".pdf")
     try:
+        from persistence.backup import create_backup
+        try:
+            create_backup("pre-import")
+        except Exception:
+            log.warning("Pre-import backup failed — continuing with import", exc_info=True)
+
         # Import inline to avoid circular import at module load time
         import sys, os as _os
         _os.sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))

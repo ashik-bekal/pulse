@@ -19,6 +19,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
 from web.import_service import TEMP_DIR, detect_pdf, start_job, get_jobs
 
+from persistence.backup import create_backup
 from persistence.database import get_connection
 from persistence.migrations import pending_migrations
 from persistence.repositories import (
@@ -1078,6 +1079,11 @@ def reset_data_view():
 def reset_data():
     if request.form.get("confirm") != "RESET":
         return redirect(url_for("reset_data_view"))
+    try:
+        create_backup("pre-reset")
+    except Exception:
+        log.exception("Pre-reset backup failed — aborting reset")
+        return redirect(url_for("reset_data_view", msg="Backup failed — reset NOT performed. Check server log."))
     with closing(get_connection()) as conn:
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
                   for t in ("transactions", "review_queue", "account_snapshots", "audit_log")}
@@ -1095,6 +1101,11 @@ def reset_period():
     account_id = request.form.get("account_id") or None
     if not year_month:
         return redirect(url_for("reset_data_view"))
+    try:
+        create_backup("pre-reset-period")
+    except Exception:
+        log.exception("Pre-reset backup failed — aborting reset")
+        return redirect(url_for("reset_data_view", msg="Backup failed — nothing deleted. Check server log."))
 
     with closing(get_connection()) as conn:
         deleted = TransactionRepository(conn).delete_period(year_month, account_id)
