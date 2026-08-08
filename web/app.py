@@ -20,6 +20,7 @@ from werkzeug.utils import secure_filename
 from web.import_service import TEMP_DIR, detect_pdf, start_job, get_jobs
 
 from persistence.database import get_connection
+from persistence.migrations import pending_migrations
 from persistence.repositories import (
     AccountRepository, TransactionRepository, CategoryRepository, TripRepository,
     ReviewQueueRepository, VendorRuleRepository, AuditLogRepository, SnapshotRepository,
@@ -97,6 +98,13 @@ def _ensure_db_initialized():
     if not row:
         return ("Database not initialized. Run:  python3 cli/init_db.py "
                 "(optionally PULSE_DB_PATH=<path> to choose a location)"), 503
+
+    with closing(get_connection()) as conn:
+        pending = pending_migrations(conn)
+    if pending:
+        return ("Database schema is out of date (pending migrations: "
+                 f"{', '.join(pending)}). Run:  python3 cli/migrate.py"), 503
+
     _schema_checked = True
 
 

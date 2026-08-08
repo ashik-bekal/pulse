@@ -15,7 +15,6 @@ import os
 import sqlite3
 
 _DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "ledger.db")
-_SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 
 def get_db_path() -> str:
@@ -34,5 +33,6 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    with open(_SCHEMA_PATH) as f:
-        conn.executescript(f.read())
+    """Create/upgrade the schema by applying all pending migrations."""
+    from persistence.migrations import apply_migrations
+    apply_migrations(conn)
