@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
-from web.import_service import TEMP_DIR, detect_pdf, start_job, get_jobs
+from web.import_service import TEMP_DIR, detect_pdf, start_job, recover_on_startup
 
 from persistence.backup import create_backup
 from persistence.database import get_connection, get_db_path
@@ -26,7 +26,7 @@ from persistence.migrations import pending_migrations
 from persistence.repositories import (
     AccountRepository, TransactionRepository, CategoryRepository, TripRepository,
     ReviewQueueRepository, VendorRuleRepository, AuditLogRepository, SnapshotRepository,
-    ExchangeRateRepository,
+    ExchangeRateRepository, ImportJobRepository,
 )
 
 app = Flask(__name__)
@@ -78,6 +78,11 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 from web.csrf import init_csrf
 init_csrf(app)
+
+try:
+    recover_on_startup()
+except Exception:
+    log.exception("startup recovery skipped")
 
 
 @app.after_request
@@ -1029,8 +1034,15 @@ def api_import_queue():
 
 @app.route("/api/import/jobs")
 def api_import_jobs():
-    """Return current state of all import jobs."""
-    return jsonify(get_jobs())
+    """Return recent import jobs keyed by job_id (shape required by base.html pollJobs)."""
+    with closing(get_connection()) as conn:
+        rows = ImportJobRepository(conn).list_recent()
+    jobs = {}
+    for r in rows:
+        d = dict(r)
+        d["reconciled"] = bool(d["reconciled"]) if d["reconciled"] is not None else None
+        jobs[d["job_id"]] = d
+    return jsonify(jobs)
 
 
 @app.route("/accounts")
