@@ -246,10 +246,63 @@ class ExchangeRateRepository:
             raise ValueError(f"No exchange rate found for {currency} in {year_month}")
         return row["rate_to_reporting"]
 
+    def get_rate_or_fallback(self, year_month: str, currency: str):
+        """Returns (rate, fallback_month). fallback_month is None when the exact
+        month matched (or currency is GBP); it is the substituted 'YYYY-MM' when a
+        fallback was used; returns (None, None) when the currency has no rates at all."""
+        if currency == "GBP":
+            return 1.0, None
+        row = self.conn.execute(
+            "SELECT rate_to_reporting FROM exchange_rates WHERE year_month=? AND currency=?",
+            (year_month, currency)).fetchone()
+        if row:
+            return row["rate_to_reporting"], None
+        row = self.conn.execute(
+            "SELECT year_month, rate_to_reporting FROM exchange_rates "
+            "WHERE currency=? AND year_month < ? ORDER BY year_month DESC LIMIT 1",
+            (currency, year_month)).fetchone()
+        if not row:
+            row = self.conn.execute(
+                "SELECT year_month, rate_to_reporting FROM exchange_rates "
+                "WHERE currency=? AND year_month > ? ORDER BY year_month ASC LIMIT 1",
+                (currency, year_month)).fetchone()
+        if row:
+            return row["rate_to_reporting"], row["year_month"]
+        return None, None
+
+    def upsert(self, year_month: str, currency: str, rate: float) -> None:
+        self.conn.execute(
+            "INSERT INTO exchange_rates (year_month, currency, rate_to_reporting) VALUES (?, ?, ?) "
+            "ON CONFLICT(year_month, currency) DO UPDATE SET rate_to_reporting=excluded.rate_to_reporting",
+            (year_month, currency.upper(), rate))
+
+    def list_all(self):
+        return self.conn.execute(
+            "SELECT year_month, currency, rate_to_reporting FROM exchange_rates "
+            "ORDER BY year_month DESC, currency").fetchall()
+
+    def latest_rate(self, currency: str):
+        """Most recent stored rate for a currency, or None. For dashboard net-worth display."""
+        row = self.conn.execute(
+            "SELECT rate_to_reporting FROM exchange_rates WHERE currency=? "
+            "ORDER BY year_month DESC LIMIT 1", (currency,)).fetchone()
+        return row["rate_to_reporting"] if row else None
+
 
 class TransactionRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+
+    def distinct_foreign_currency_periods(self):
+        """Distinct (year_month, currency) pairs actually needing an FX rate —
+        used by the /rates coverage view to show which months have a gap."""
+        return self.conn.execute("""
+            SELECT DISTINCT substr(transaction_date, 1, 7) AS year_month,
+                   settlement_currency AS currency
+            FROM transactions
+            WHERE settlement_currency != 'GBP'
+            ORDER BY year_month DESC, currency
+        """).fetchall()
 
     def already_imported(self, account_id: int, source_statement: str) -> bool:
         row = self.conn.execute(

@@ -81,12 +81,15 @@ def ingest_transactions(
         decision = categorize(txn.description, rules, fallback_category_id=fallback_category_id,
                              _presorted=True, amount=txn.settlement_amount, is_credit_card=is_credit_card)
         year_month = txn.date[:7]
-        reporting_amount = to_reporting_currency(
+        reporting_amount, fx_note = to_reporting_currency(
             rate_repo, txn.settlement_amount, txn.settlement_currency, year_month
         )
 
         txn_id = txn_repo.insert(account_id, txn, decision, reporting_amount, source_statement)
         inserted_ids.append(txn_id)
+
+        if fx_note:
+            review_repo.add(txn_id, f"FX rate issue: {fx_note}", "high")
 
         if decision.confidence in REVIEW_CONFIDENCE_LEVELS:
             issue = (
