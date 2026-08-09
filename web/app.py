@@ -7,6 +7,7 @@ persistence/repositories.py.  Routes do three things only:
 """
 import logging
 import os
+import re
 import sys
 import uuid
 from contextlib import closing
@@ -288,12 +289,8 @@ def dashboard():
 
             gbp_equiv = None
             if display_balance is not None and acct["currency"] != "GBP":
-                rate_row = conn.execute("""
-                    SELECT rate_to_reporting FROM exchange_rates
-                    WHERE currency=? ORDER BY year_month DESC LIMIT 1
-                """, (acct["currency"],)).fetchone()
-                rate = rate_row["rate_to_reporting"] if rate_row else 1.0
-                gbp_equiv = display_balance * rate
+                rate = ExchangeRateRepository(conn).latest_rate(acct["currency"])
+                gbp_equiv = display_balance * rate if rate is not None else None
 
             acct_months = [
                 {"ym": ym,
@@ -872,6 +869,56 @@ def vendor_rules_view():
         categories = CategoryRepository(conn).list_all()
     pending_count = sum(1 for r in rules if r["is_pending"])
     return render_template("vendor_rules.html", rules=rules, categories=categories, pending_count=pending_count)
+
+
+@app.route("/rates")
+def rates_view():
+    with closing(get_connection()) as conn:
+        rate_repo = ExchangeRateRepository(conn)
+        rates = rate_repo.list_all()
+
+        # Coverage: for every (month, currency) a transaction actually
+        # needed, show whether it got an exact rate, a fallback (and from
+        # which month), or nothing at all — so gaps are visible at a
+        # glance instead of only discoverable one transaction at a time
+        # via the review queue.
+        periods = TransactionRepository(conn).distinct_foreign_currency_periods()
+        coverage = []
+        for p in periods:
+            rate, fallback_month = rate_repo.get_rate_or_fallback(p["year_month"], p["currency"])
+            if rate is None:
+                status = "missing"
+            elif fallback_month is not None:
+                status = "fallback"
+            else:
+                status = "exact"
+            coverage.append({
+                "year_month":     p["year_month"],
+                "currency":       p["currency"],
+                "rate":           rate,
+                "status":         status,
+                "fallback_month": fallback_month,
+            })
+    return render_template("rates.html", rates=rates, coverage=coverage,
+                           flash_msg=request.args.get("msg", ""))
+
+
+@app.route("/rates/upsert", methods=["POST"])
+def upsert_rate():
+    year_month = request.form.get("year_month", "").strip()
+    currency   = request.form.get("currency", "").strip().upper()
+    rate_raw   = request.form.get("rate", "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}", year_month) or not re.fullmatch(r"[A-Z]{3}", currency) or currency == "GBP":
+        return redirect(url_for("rates_view", msg="Invalid input: month must be YYYY-MM, currency a 3-letter code, not GBP."))
+    try:
+        rate = float(rate_raw)
+        assert rate > 0
+    except (ValueError, AssertionError):
+        return redirect(url_for("rates_view", msg="Rate must be a positive number."))
+    with closing(get_connection()) as conn:
+        ExchangeRateRepository(conn).upsert(year_month, currency, rate)
+        conn.commit()
+    return redirect(url_for("rates_view", msg=f"Saved {currency} {year_month} = {rate}."))
 
 
 @app.route("/api/import/detect", methods=["POST"])

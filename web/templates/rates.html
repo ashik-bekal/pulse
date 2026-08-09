@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Exchange Rates — Master Ledger{% endblock %}
+
+{% block extra_head %}
+<style>
+  .rate-wrap { padding: 20px 24px; max-width: 900px; margin: 0 auto; }
+
+  .rate-page-header { margin-bottom: 4px; }
+  .rate-page-title h1 { font-family: 'Spectral', serif; font-size: 22px; font-weight: 600; color: var(--c-text); }
+  .rate-sub {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    color: var(--c-faint); margin-bottom: 18px; line-height: 1.6;
+  }
+
+  .rate-flash {
+    font-family:'IBM Plex Mono',monospace; font-size:11px;
+    background:var(--c-accent-bg); color:var(--c-accent);
+    border:1px solid var(--c-accent-bd); border-radius:3px;
+    padding:10px 14px; margin-bottom:16px;
+  }
+
+  .rate-section-title { font-family: 'Spectral', serif; font-size: 15px; font-weight: 600; color: var(--c-text); margin: 22px 0 10px; }
+  .rate-section-title:first-of-type { margin-top: 0; }
+
+  /* Add/edit form */
+  .rate-add-form {
+    background: var(--c-card); border: 1px solid var(--c-border);
+    border-radius: 3px; padding: 16px 18px; margin-bottom: 18px;
+  }
+  .rate-form-grid { display: grid; grid-template-columns: 1fr 100px 140px 110px; gap: 8px; align-items: end; }
+  .rate-field { display: flex; flex-direction: column; gap: 4px; }
+  .rate-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: var(--c-faint); }
+  .rate-input {
+    background: var(--c-subtle); border: 1px solid var(--c-border);
+    color: var(--c-text); border-radius: 2px; padding: 7px 9px; font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .btn-save { font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:500; background:var(--c-accent); color:#080a10; border:none; border-radius:3px; padding:7px 12px; cursor:pointer; }
+  .rate-form-hint { font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--c-faint); margin-top:8px; }
+
+  /* Tables (shared) */
+  .rate-table { background: var(--c-card); border: 1px solid var(--c-border); border-radius: 3px; overflow: hidden; margin-bottom: 20px; }
+  .rate-cols  { grid-template-columns: 1fr 1fr 1fr; }
+  .cov-cols   { grid-template-columns: 1fr 1fr 1fr 1fr; }
+  .rate-header { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border); background: var(--c-subtle); }
+  .rate-header span { font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--c-faint); }
+  .rate-row { display: grid; padding: 9px 14px; border-bottom: 1px solid var(--c-border2); align-items: center; font-family:'IBM Plex Mono',monospace; font-size:12px; color: var(--c-text); }
+  .rate-row:last-child { border-bottom: none; }
+  .rate-row:hover { background: var(--c-subtle); }
+  .rate-empty { padding:32px 24px; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--c-faint); }
+
+  .status-pill { font-family:'IBM Plex Mono',monospace; font-size:9.5px; padding:2px 7px; border-radius:2px; }
+  .status-pill.exact    { background:var(--c-green-bg); color:var(--c-green-t); border:1px solid var(--c-green-bd); }
+  .status-pill.fallback { background:var(--c-amber-bg); color:var(--c-amber-t); border:1px solid var(--c-amber-bd); }
+  .status-pill.missing  { background:var(--c-red-bg);   color:var(--c-red-t);   border:1px solid var(--c-red-bd); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rate-wrap">
+
+  <div class="rate-page-header">
+    <div class="rate-page-title"><h1>Exchange Rates</h1></div>
+  </div>
+  <div class="rate-sub">
+    Monthly rates to GBP (multiply native amount by rate). Imports fall back
+    to the nearest month and flag a review item when a month is missing.
+  </div>
+
+  {% if flash_msg %}
+  <div class="rate-flash">{{ flash_msg }}</div>
+  {% endif %}
+
+  <div class="rate-section-title">Coverage — months your transactions actually needed</div>
+  <div class="rate-table">
+    <div class="rate-header cov-cols">
+      <span>Month</span>
+      <span>Currency</span>
+      <span>Status</span>
+      <span>Rate used</span>
+    </div>
+    {% if coverage %}
+      {% for c in coverage %}
+      <div class="rate-row cov-cols">
+        <span>{{ c.year_month }}</span>
+        <span>{{ c.currency }}</span>
+        <span>
+          {% if c.status == 'exact' %}
+            <span class="status-pill exact">exact</span>
+          {% elif c.status == 'fallback' %}
+            <span class="status-pill fallback">fallback from {{ c.fallback_month }}</span>
+          {% else %}
+            <span class="status-pill missing">missing</span>
+          {% endif %}
+        </span>
+        <span>{{ '%.4f'|format(c.rate) if c.rate is not none else '—' }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="rate-empty">No foreign-currency transactions yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="rate-section-title">Add / update a rate</div>
+  <div class="rate-add-form">
+    <form method="post" action="{{ url_for('upsert_rate') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="rate-form-grid">
+        <div class="rate-field">
+          <label class="rate-label" for="f-month">Month</label>
+          <input id="f-month" name="year_month" type="month" class="rate-input" required>
+        </div>
+        <div class="rate-field">
+          <label class="rate-label" for="f-currency">Currency</label>
+          <input id="f-currency" name="currency" class="rate-input" maxlength="3" placeholder="USD" required>
+        </div>
+        <div class="rate-field">
+          <label class="rate-label" for="f-rate">Rate to GBP</label>
+          <input id="f-rate" name="rate" type="number" step="0.0001" min="0.0001" class="rate-input" placeholder="0.7900" required>
+        </div>
+        <button type="submit" class="btn-save">Save rate</button>
+      </div>
+      <div class="rate-form-hint">Submitting an existing month + currency overwrites it.</div>
+    </form>
+  </div>
+
+  <div class="rate-section-title">All stored rates</div>
+  <div class="rate-table">
+    <div class="rate-header rate-cols">
+      <span>Month</span>
+      <span>Currency</span>
+      <span>Rate to GBP</span>
+    </div>
+    {% if rates %}
+      {% for r in rates %}
+      <div class="rate-row rate-cols">
+        <span>{{ r.year_month }}</span>
+        <span>{{ r.currency }}</span>
+        <span>{{ '%.4f'|format(r.rate_to_reporting) }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="rate-empty">No rates stored yet.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

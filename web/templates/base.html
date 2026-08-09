@@ -376,6 +376,8 @@
          class="nav-tab {% if request.endpoint in ('accounts_view','add_account','deactivate_account') %}active{% endif %}">Accounts</a>
       <a href="{{ url_for('vendor_rules_view') }}"
          class="nav-tab {% if request.endpoint in ('vendor_rules_view','add_vendor_rule','delete_vendor_rule') %}active{% endif %}">Vendor Rules</a>
+      <a href="{{ url_for('rates_view') }}"
+         class="nav-tab {% if request.endpoint in ('rates_view','upsert_rate') %}active{% endif %}">Rates</a>
     </div>
   </div>
   <div class="nav-right">
