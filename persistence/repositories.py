@@ -790,3 +790,45 @@ class SnapshotRepository:
             "UPDATE account_snapshots SET is_hidden=1 WHERE year_month=?", (year_month,)
         )
         return cur.rowcount
+
+
+class ImportJobRepository:
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def create(self, job_id, temp_id, filename, account_type, year, start_month, target_account_id):
+        self.conn.execute("""
+            INSERT INTO import_jobs (job_id, temp_id, filename, account_type, year,
+                                     start_month, target_account_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued')
+        """, (job_id, temp_id, filename, account_type, year, start_month, target_account_id))
+
+    def mark_running(self, job_id):
+        self.conn.execute("UPDATE import_jobs SET status='running' WHERE job_id=?", (job_id,))
+
+    def mark_done(self, job_id, inserted, skipped, reconciled, diff):
+        self.conn.execute("""
+            UPDATE import_jobs SET status='done', inserted=?, skipped=?, reconciled=?, diff=?,
+                   finished_at=datetime('now') WHERE job_id=?
+        """, (inserted, skipped, 1 if reconciled else 0, diff, job_id))
+
+    def mark_error(self, job_id, error):
+        self.conn.execute("""
+            UPDATE import_jobs SET status='error', error=?, finished_at=datetime('now')
+            WHERE job_id=?
+        """, (error, job_id))
+
+    def list_recent(self, limit: int = 50) -> List[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM import_jobs ORDER BY started_at DESC, job_id DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    def fail_stale(self) -> int:
+        """Mark jobs stuck in queued/running (from a previous process) as errors."""
+        cur = self.conn.execute("""
+            UPDATE import_jobs SET status='error',
+                   error='Interrupted by server restart — re-upload this statement.',
+                   finished_at=datetime('now')
+            WHERE status IN ('queued','running')
+        """)
+        return cur.rowcount

@@ -4,14 +4,18 @@ PDF statement detection and async import job management.
 Detection: reads first 3 pages of text, pattern-matches to identify
   which account/parser to use, and extracts the statement year + start month.
 
-Job management: a lightweight in-memory job store backed by a threading.Lock.
-  Jobs survive as long as the server process runs; a restart clears history.
+Job management: jobs are persisted in the import_jobs table (via
+  ImportJobRepository) so status survives a server restart. Each job still
+  runs in its own daemon thread; the thread writes its status transitions
+  through a fresh connection per write rather than an in-memory dict.
   Temp PDF files are stored in TEMP_DIR and deleted by the worker thread
-  when the job completes (success or failure).
+  when the job completes (success or failure); recover_on_startup() sweeps
+  any left behind by a process that died mid-import.
 """
 import logging
 import os
 import re
+import time
 import uuid
 import threading
 import tempfile
@@ -19,13 +23,13 @@ from contextlib import closing
 from datetime import datetime
 from typing import Optional
 
+from persistence.database import get_connection
+from persistence.repositories import ImportJobRepository
+
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "ledger_imports")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 log = logging.getLogger("pulse.import")
-
-_jobs: dict = {}       # job_id -> dict
-_jobs_lock = threading.Lock()
 
 MONTH_NAMES = {
     "january": 1, "february": 2, "march": 3, "april": 4,
@@ -234,37 +238,24 @@ def start_job(temp_id: str, filename: str, account_type: str,
               year: Optional[int], start_month: Optional[int],
               target_account_id: Optional[int] = None) -> str:
     job_id = str(uuid.uuid4())[:8]
-    with _jobs_lock:
-        _jobs[job_id] = {
-            "job_id":            job_id,
-            "temp_id":           temp_id,
-            "filename":          filename,
-            "account_type":      account_type,
-            "year":              year,
-            "start_month":       start_month,
-            "target_account_id": target_account_id,
-            "status":            "queued",
-            "inserted":          0,
-            "error":             None,
-            "started_at":        datetime.now().isoformat(timespec="seconds"),
-            "finished_at":       None,
-        }
-    t = threading.Thread(target=_run_job, args=(job_id,), daemon=True)
-    t.start()
+    with closing(get_connection()) as conn:
+        ImportJobRepository(conn).create(job_id, temp_id, filename, account_type,
+                                         year, start_month, target_account_id)
+        conn.commit()
+    threading.Thread(target=_run_job, args=(job_id, temp_id, filename, account_type,
+                                            year, start_month, target_account_id),
+                     daemon=True).start()
     return job_id
 
 
-def get_jobs() -> dict:
-    with _jobs_lock:
-        return dict(_jobs)
+def _run_job(job_id: str, temp_id: str, filename: str, account_type: str,
+             year: Optional[int], start_month: Optional[int],
+             target_account_id: Optional[int]) -> None:
+    with closing(get_connection()) as conn:
+        ImportJobRepository(conn).mark_running(job_id)
+        conn.commit()
 
-
-def _run_job(job_id: str) -> None:
-    with _jobs_lock:
-        job = _jobs[job_id]
-        _jobs[job_id]["status"] = "running"
-
-    pdf_path = os.path.join(TEMP_DIR, job["temp_id"] + ".pdf")
+    pdf_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
     try:
         from persistence.backup import create_backup
         try:
@@ -272,46 +263,51 @@ def _run_job(job_id: str) -> None:
         except Exception:
             log.warning("Pre-import backup failed — continuing with import", exc_info=True)
 
-        # Import inline to avoid circular import at module load time
-        import sys, os as _os
-        _os.sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), ".."))
-        from persistence.database import get_connection
         from cli.ingest import ingest_hsbc, ingest_chase_bank, ingest_sapphire
 
         with closing(get_connection()) as conn:
-            acct = job["account_type"]
-            year = job["year"] or datetime.now().year
-            sm   = job["start_month"] or 1
-            target_account_id = job.get("target_account_id")
+            resolved_year  = year or datetime.now().year
+            resolved_month = start_month or 1
 
-            if acct == "hsbc":
+            if account_type == "hsbc":
                 inserted_ids, skipped, reconciled, diff = ingest_hsbc(conn, pdf_path, target_account_id=target_account_id)
-            elif acct == "chase_bank":
-                inserted_ids, skipped, reconciled, diff = ingest_chase_bank(conn, pdf_path, year, sm, target_account_id=target_account_id)
-            elif acct == "sapphire":
-                inserted_ids, skipped, reconciled, diff = ingest_sapphire(conn, pdf_path, year, sm, target_account_id=target_account_id)
+            elif account_type == "chase_bank":
+                inserted_ids, skipped, reconciled, diff = ingest_chase_bank(conn, pdf_path, resolved_year, resolved_month, target_account_id=target_account_id)
+            elif account_type == "sapphire":
+                inserted_ids, skipped, reconciled, diff = ingest_sapphire(conn, pdf_path, resolved_year, resolved_month, target_account_id=target_account_id)
             else:
-                raise ValueError(f"Unknown account type: {acct}")
+                raise ValueError(f"Unknown account type: {account_type}")
             conn.commit()
 
-        with _jobs_lock:
-            _jobs[job_id].update({
-                "status":      "done",
-                "inserted":    len(inserted_ids),
-                "skipped":     skipped,
-                "reconciled":  reconciled,
-                "diff":        diff,
-                "finished_at": datetime.now().isoformat(timespec="seconds"),
-            })
+        with closing(get_connection()) as conn:
+            ImportJobRepository(conn).mark_done(job_id, len(inserted_ids), skipped, reconciled, diff)
+            conn.commit()
 
     except Exception as exc:
-        log.exception("Import job %s failed for %r", job_id, job.get("filename"))
-        with _jobs_lock:
-            _jobs[job_id].update({
-                "status":      "error",
-                "error":       str(exc),
-                "finished_at": datetime.now().isoformat(timespec="seconds"),
-            })
+        log.exception("Import job %s failed for %r", job_id, filename)
+        with closing(get_connection()) as conn:
+            ImportJobRepository(conn).mark_error(job_id, str(exc))
+            conn.commit()
     finally:
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
+
+
+def recover_on_startup() -> None:
+    """Fail over jobs orphaned by a previous process and sweep temp PDFs older than 24h."""
+    try:
+        with closing(get_connection()) as conn:
+            n = ImportJobRepository(conn).fail_stale()
+            conn.commit()
+        if n:
+            log.warning("Marked %d orphaned import job(s) as error after restart", n)
+    except Exception:
+        log.exception("Import-job startup recovery failed")  # never block app start
+    cutoff = time.time() - 24 * 3600
+    for name in os.listdir(TEMP_DIR):
+        path = os.path.join(TEMP_DIR, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+        except OSError:
+            pass
