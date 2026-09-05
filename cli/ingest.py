@@ -15,6 +15,7 @@ Usage:
 import argparse
 import os
 import sys
+from typing import Mapping, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -25,7 +26,8 @@ from persistence.repositories import (
     AccountRepository, CategoryRepository, VendorRuleRepository, TransactionRepository,
     ReviewQueueRepository, ExchangeRateRepository, SnapshotRepository,
 )
-from parsers import hsbc, chase_bank, chase_sapphire
+from parsers import hsbc, chase_bank, chase_sapphire, revolut
+from parsers.base import ParseContext
 from services.ingestion import ingest_transactions, flag_fx_sanity_failures
 from services.reconciliation import record_snapshot, format_report
 
@@ -34,10 +36,126 @@ ACCOUNT_US_CHECKING = "US_CHECKING"
 ACCOUNT_US_SAVINGS = "US_SAVINGS"
 ACCOUNT_US_CREDIT_CARD = "US_CREDIT_CARD"
 
+STATEMENT_PARSERS = {
+    "revolut": revolut,
+}
+
 
 def _extract_text(pdf_path: str) -> str:
     with pdfplumber.open(pdf_path) as pdf:
         return "\n".join(p.extract_text() for p in pdf.pages if p.extract_text())
+
+
+def ingest_statement(
+    conn,
+    pdf_path: str,
+    filetype: str,
+    target_account_id: Optional[int] = None,
+    target_account_ids: Optional[Mapping[str, int]] = None,
+    context: Optional[ParseContext] = None,
+):
+    """Ingest every account returned by a conforming statement parser.
+
+    ``target_account_id`` is convenient for a single-account statement.
+    Multi-account statements use ``target_account_ids``, keyed by the parsed
+    account number where available, or otherwise by its label.
+    """
+    try:
+        statement_parser = STATEMENT_PARSERS[filetype]
+    except KeyError as exc:
+        raise ValueError(f"Unknown statement filetype: {filetype}") from exc
+
+    text = _extract_text(pdf_path)
+    parsed_statement = statement_parser.parse(text, context=context or ParseContext())
+    if not parsed_statement.accounts:
+        raise ValueError(f"{filetype} parser returned no accounts")
+    if target_account_id is not None and target_account_ids is not None:
+        raise ValueError("Supply either target_account_id or target_account_ids, not both")
+    if len(parsed_statement.accounts) > 1 and target_account_id is not None:
+        raise ValueError(
+            "target_account_id can only be used for a single-account statement; "
+            "use target_account_ids for multiple accounts"
+        )
+
+    resolved_accounts = []
+    for parsed_account in parsed_statement.accounts:
+        ledger_account_id = target_account_id
+        if target_account_ids is not None:
+            lookup_keys = [parsed_account.account_number, parsed_account.label]
+            ledger_account_id = next(
+                (target_account_ids[key] for key in lookup_keys
+                 if key is not None and key in target_account_ids),
+                None,
+            )
+        if ledger_account_id is None:
+            identifier = parsed_account.account_number or parsed_account.label
+            raise ValueError(f"No target ledger account supplied for {identifier!r}")
+        resolved_accounts.append((parsed_account, ledger_account_id))
+
+    transaction_repo = TransactionRepository(conn)
+    vendor_rule_repo = VendorRuleRepository(conn)
+    category_repo = CategoryRepository(conn)
+    review_repo = ReviewQueueRepository(conn)
+    exchange_rate_repo = ExchangeRateRepository(conn)
+    snapshot_repo = SnapshotRepository(conn)
+    source_statement = os.path.basename(pdf_path)
+
+    for warning in parsed_statement.warnings:
+        print(f"  ⚠ {warning}")
+
+    all_inserted_ids = []
+    total_skipped = 0
+    reconciliation_results = []
+    for parsed_account, ledger_account_id in resolved_accounts:
+        inserted_ids, skipped = ingest_transactions(
+            parsed_account.transactions,
+            ledger_account_id,
+            source_statement,
+            transaction_repo,
+            vendor_rule_repo,
+            category_repo,
+            review_repo,
+            exchange_rate_repo,
+        )
+        all_inserted_ids.extend(inserted_ids)
+        total_skipped += skipped
+        reconciliation_results.append(parsed_account.reconciliation)
+
+        print(f"\n=== {parsed_account.label}: {source_statement} ===")
+        print(
+            f"Transactions parsed: {len(parsed_account.transactions)}  "
+            f"Inserted: {len(inserted_ids)}  Skipped (duplicates): {skipped}"
+        )
+        print(format_report(parsed_account.label, parsed_account.reconciliation))
+
+        if parsed_account.transactions:
+            year_month = parsed_account.transactions[-1].date[:7]
+            record_snapshot(
+                snapshot_repo,
+                ledger_account_id,
+                year_month,
+                parsed_account.reconciliation,
+            )
+
+    all_reconciled = all(result.is_clean for result in reconciliation_results)
+    if all_reconciled:
+        reconciliation_diff = 0.0
+    elif len(reconciliation_results) == 1:
+        reconciliation_diff = reconciliation_results[0].diff
+    elif any(result.diff is None for result in reconciliation_results):
+        reconciliation_diff = None
+    else:
+        reconciliation_diff = max(abs(result.diff) for result in reconciliation_results)
+    return all_inserted_ids, total_skipped, all_reconciled, reconciliation_diff
+
+
+def ingest_revolut(conn, pdf_path: str, target_account_id: int):
+    return ingest_statement(
+        conn,
+        pdf_path,
+        "revolut",
+        target_account_id=target_account_id,
+    )
 
 
 def ingest_hsbc(conn, pdf_path: str, target_account_id: int = None):

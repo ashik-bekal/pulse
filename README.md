@@ -12,7 +12,7 @@ provably complete, not approximately right.
 
 ## Features
 
-- **Statement parsing** for three PDF formats: HSBC UK current accounts,
+- **Statement parsing** for four PDF formats: HSBC UK and Revolut current accounts,
   Chase checking/savings (combined statements split per account), and
   Chase credit cards (incl. three-line FX breakouts with exchange rates)
 - **Exact reconciliation** per statement: opening balance walked through

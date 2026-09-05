@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from web.import_service import (  # noqa: E402
-    _try_hsbc, _try_sapphire, _try_chase_bank,
+    _try_hsbc, _try_revolut, _try_sapphire, _try_chase_bank,
     _extract_chase_period, _extract_last4, _period_label, detect_pdf,
 )
 
@@ -36,6 +36,12 @@ CHASE_BANK_TEXT = """JPMorgan Chase Bank, N.A.
 CHASE TOTAL CHECKING
 April 22, 2025 through May 21, 2025
 Account Number: 000001234567
+"""
+
+REVOLUT_TEXT = """GBP Statement
+Revolut Bank UK Ltd
+Balance summary
+Account transactions from 1 July 2026 to 31 July 2026
 """
 
 
@@ -77,6 +83,17 @@ def test_chase_bank_detected():
     assert result["last4"] == "4567"
 
 
+def test_revolut_detected():
+    result = _try_revolut(REVOLUT_TEXT)
+    assert result is not None
+    assert result["account_type"] == "revolut"
+    assert result["account_label"] == "Revolut"
+    assert result["year"] == 2026
+    assert result["start_month"] == 7
+    assert result["period_label"] == "Jul 2026"
+    assert result["confidence"] == "high"
+    assert result["last4"] is None
+
 def test_chase_period_opening_closing_format():
     assert _extract_chase_period("Opening/Closing Date 12/22/25 - 01/21/26") == (2025, 12)
 
@@ -105,7 +122,7 @@ def test_detect_pdf_unreadable_file():
 
 
 def test_priority_order_hsbc_wins():
-    # detect_pdf tries _try_hsbc before _try_sapphire/_try_chase_bank, so a
+    # detect_pdf tries _try_hsbc before the other detectors, so a
     # text blob carrying both HSBC and Chase markers resolves to HSBC.
     mixed_text = HSBC_TEXT + "\nOpening/Closing Date 04/22/25 - 05/21/25\nChase\n"
     assert _try_hsbc(mixed_text) is not None

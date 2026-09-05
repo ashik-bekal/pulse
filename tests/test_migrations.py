@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from persistence.migrations import apply_migrations, pending_migrations  # noqa: E402
+from persistence.migrations import MIGRATIONS_DIR, apply_migrations, pending_migrations  # noqa: E402
 
 SCHEMA_SQL_PATH = os.path.join(os.path.dirname(__file__), "..", "persistence", "schema.sql")
 
