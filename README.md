@@ -104,8 +104,10 @@ automatically before Reset operations and statement imports.
 
 ## Always-on server (Windows) with phone/laptop access
 
-Keep development and your real ledger apart: your dev checkout runs on demo
-data, and a separate **server checkout** tracks `main` only and owns the real
+**Set up your personal ledger and your development checkout as two separate
+folders.** Development (switching branches, trying migrations, reseeding)
+should never run against your real data. Your dev checkout runs on demo
+data; a separate **server checkout** tracks `main` only and owns the real
 `data/` folder. Nothing ever gets edited in the server checkout; it only
 moves forward when you merge to `main` and run the update script.
 
@@ -119,13 +121,22 @@ moves forward when you merge to `main` and run the update script.
 **Install** (normal PowerShell, one UAC prompt for the Scheduled Task):
 
 ```powershell
-# from your dev checkout; -ImportDataFrom moves an existing ledger across
-.\scripts\windows\install-server.ps1 -InstallDir H:\MyPULSE -ImportDataFrom .\data -DisableSleep
+.\scripts\windows\install-server.ps1 -InstallDir H:\MyPULSE -DisableSleep
 ```
 
-It clones `main` into `-InstallDir`, builds a virtualenv, copies the ledger
-with SQLite's backup API (integrity check + per-table row counts must match;
-the old folder is renamed, never deleted), applies migrations, and registers
+Already have a real ledger in your dev checkout's `data/`? Move it across
+once, **before** installing, with the dev server stopped (so no `-wal`
+changes are in flight; move the whole folder, including any `-wal`/`-shm`
+files):
+
+```powershell
+New-Item -ItemType Directory H:\MyPULSE | Out-Null
+Move-Item .\data H:\MyPULSE\data
+```
+
+It clones `main` into `-InstallDir` (keeping a `data/` folder already there),
+builds a virtualenv, backs up and migrates an existing ledger or creates a
+starter one if there is none, and registers
 a **"PULSE Server"** Scheduled Task that starts at boot without a login and
 restarts on failure. The server ([`cli/serve.py`](cli/serve.py), waitress)
 binds to `127.0.0.1` only. Re-running it is safe; an existing ledger is

@@ -16,21 +16,16 @@
   Run from a normal (non-admin) PowerShell. You will get ONE UAC prompt, for
   registering the Scheduled Task.
 
-.EXAMPLE
-  # First install, moving the real ledger out of a dev checkout:
-  .\scripts\windows\install-server.ps1 -InstallDir H:\Claude\MyPULSE -ImportDataFrom .\data -DisableSleep
+  If <InstallDir>\data\ledger.db already exists (e.g. you moved an existing
+  ledger there first - see README), it is kept; otherwise a starter ledger
+  is created.
 
 .EXAMPLE
-  # Fresh install for someone with no existing data:
-  .\scripts\windows\install-server.ps1 -InstallDir $HOME\MyPULSE
+  .\scripts\windows\install-server.ps1 -InstallDir $HOME\MyPULSE -DisableSleep
 #>
 [CmdletBinding()]
 param(
     [string]$InstallDir = (Join-Path $HOME "MyPULSE"),
-    # An existing data folder (containing ledger.db) to copy into the server.
-    # Copied with SQLite's backup API, verified, then the source folder is
-    # RENAMED (never deleted) so a dev checkout can't keep writing to it.
-    [string]$ImportDataFrom,
     [int]$Port = 5001,
     [string]$Branch = "main",
     [string]$TaskName = "PULSE Server",
@@ -143,12 +138,7 @@ Push-Location $InstallDir
 try {
     if (Test-Path $DbPath) {
         Step "Existing ledger found - backing it up and applying migrations"
-        if ($ImportDataFrom) { Write-Host "(-ImportDataFrom ignored: the server already has a ledger; it is never overwritten.)" -ForegroundColor Yellow }
         Invoke-Checked $VenvPy @("cli\backup.py", "--reason", "pre-install")
-    } elseif ($ImportDataFrom) {
-        Step "Moving data from $ImportDataFrom"
-        $src = (Resolve-Path $ImportDataFrom).Path
-        Invoke-Checked $VenvPy @("cli\move_data.py", "--src", $src, "--dest", $DataDir, "--retire-source")
     } else {
         Step "No existing data - creating a starter ledger"
         Invoke-Checked $VenvPy @("cli\init_db.py")
