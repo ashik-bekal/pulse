@@ -18,7 +18,7 @@ math stays in parsers/ + services/reconciliation.py. This service is the
 thin layer that wires categorization + persistence together, which is the
 one piece that previously had no name and lived as inline code.
 """
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from domain.categorization import categorize
 from domain.models import RawTransaction
@@ -41,10 +41,10 @@ def ingest_transactions(
     review_repo: ReviewQueueRepository,
     rate_repo: ExchangeRateRepository,
     is_credit_card: bool = False,
-) -> List[int]:
+) -> Tuple[List[int], int]:
     """
     Categorize and persist a batch of already-parsed transactions for one
-    account. Returns the list of inserted transaction IDs.
+    account. Returns (inserted transaction IDs, count of duplicates skipped).
 
     Loads vendor rules ONCE for the whole batch (fixing the N+1 query that
     existed when categorization opened its own connection per transaction),

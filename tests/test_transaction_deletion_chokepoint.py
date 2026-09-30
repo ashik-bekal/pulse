@@ -43,8 +43,10 @@ def _iter_py_files():
 def test_transactions_table_only_deleted_via_named_repository_methods():
     violations = []
     for path in _iter_py_files():
-        rel = os.path.relpath(path, REPO_ROOT)
-        with open(path) as fh:
+        # Normalise to forward slashes so the ALLOWED paths match on Windows too
+        # (os.path.relpath returns backslash-separated paths there).
+        rel = os.path.relpath(path, REPO_ROOT).replace(os.sep, "/")
+        with open(path, encoding="utf-8") as fh:
             for lineno, line in enumerate(fh, start=1):
                 if not PATTERN.search(line):
                     continue
