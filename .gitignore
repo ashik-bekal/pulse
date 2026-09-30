@@ -38,3 +38,12 @@ tmp/
 
 # Local design notes, not for public repo
 blueprints/
+
+# Golden files hold parsed real transactions from the statements above
+tests/fixtures/golden_*.json
+
+# Personal Claude notes and local settings (not for the repo)
+CLAUDE.md
+CLAUDE.local.md
+.claude/settings.local.json
+
