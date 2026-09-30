@@ -44,6 +44,8 @@ blueprints/
 
 # Golden files hold parsed real transactions from the statements above
 tests/fixtures/golden_*.json
+# Integration test that parses a real statement PDF (only runs locally)
+tests/test_ingestion_integration.py
 
 # Personal Claude notes and local settings (not for the repo)
 CLAUDE.md

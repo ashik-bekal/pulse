@@ -162,6 +162,19 @@ if ($DisableSleep) { $registerArgs += "-DisableSleep" }
 $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList $registerArgs
 if ($p.ExitCode -ne 0) { Fail "Registering the Scheduled Task failed (exit $($p.ExitCode)). See the message in the admin window." }
 
+# Report which trigger was registered: boot (S4U) or the logon fallback.
+$StartsAt = "unknown (check Task Scheduler)"
+try {
+    $kinds = (Get-ScheduledTask -TaskName $TaskName).Triggers | ForEach-Object { $_.CimClass.CimClassName }
+    if ($kinds -contains "MSFT_TaskBootTrigger") {
+        $StartsAt = "system startup (no login needed)"
+        Write-Host "Task starts at: $StartsAt" -ForegroundColor Green
+    } elseif ($kinds -contains "MSFT_TaskLogonTrigger") {
+        $StartsAt = "your logon only (boot-time registration was refused)"
+        Write-Host "Task starts at: $StartsAt" -ForegroundColor Yellow
+    }
+} catch { }
+
 # -- 5. Health check --------------------------------------------------------------------
 Step "Waiting for PULSE on http://127.0.0.1:$Port"
 $ok = $false
@@ -182,17 +195,26 @@ Write-Host "PULSE is up." -ForegroundColor Green
 $tsUrl = $null
 if (-not $SkipTailscale) {
     Step "Publishing to your tailnet with Tailscale Serve"
-    $ts = Get-Command tailscale -ErrorAction SilentlyContinue
+    # The installer doesn't always put tailscale.exe on PATH (or PATH isn't
+    # refreshed yet), so fall back to its default install folders.
+    $ts = $null
+    $cmd = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($cmd) { $ts = $cmd.Source }
+    else {
+        foreach ($dir in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+            if ($dir -and (Test-Path (Join-Path $dir "Tailscale\tailscale.exe"))) { $ts = Join-Path $dir "Tailscale\tailscale.exe"; break }
+        }
+    }
     if (-not $ts) {
         Write-Host "Tailscale not installed. Install it (https://tailscale.com/download), sign in, then run:" -ForegroundColor Yellow
         Write-Host "  tailscale serve --bg --https=443 http://127.0.0.1:$Port"
     } else {
-        & tailscale serve --bg --https=443 "http://127.0.0.1:$Port"
+        & $ts serve --bg --https=443 "http://127.0.0.1:$Port"
         if ($LASTEXITCODE -ne 0) {
             Write-Host "tailscale serve failed. Check you are signed in and that HTTPS certificates are enabled for your tailnet (admin console > DNS), then run the command above." -ForegroundColor Yellow
         } else {
             try {
-                $dns = ((& tailscale status --json) | ConvertFrom-Json).Self.DNSName.TrimEnd(".")
+                $dns = ((& $ts status --json) | ConvertFrom-Json).Self.DNSName.TrimEnd(".")
                 $tsUrl = "https://$dns"
             } catch { }
         }
@@ -202,6 +224,7 @@ if (-not $SkipTailscale) {
 Write-Host "`nDone." -ForegroundColor Green
 Write-Host "  On this PC:        http://127.0.0.1:$Port"
 if ($tsUrl) { Write-Host "  Phone / Mac:       $tsUrl   (devices signed in to your tailnet only)" }
+Write-Host "  Starts at:         $StartsAt"
 Write-Host "  Server code:       $InstallDir  ($commit)"
 Write-Host "  Ledger:            $DbPath"
 Write-Host "  Logs:              $LogFile"
