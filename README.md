@@ -102,6 +102,59 @@ is safe while the app is running (a plain file copy is not, under WAL).
 Backups land in `data/backups/` (4 newest kept). The app also snapshots
 automatically before Reset operations and statement imports.
 
+## Always-on server (Windows) with phone/laptop access
+
+Keep development and your real ledger apart: your dev checkout runs on demo
+data, and a separate **server checkout** tracks `main` only and owns the real
+`data/` folder. Nothing ever gets edited in the server checkout; it only
+moves forward when you merge to `main` and run the update script.
+
+| | Dev checkout | Server checkout |
+|---|---|---|
+| Code | any branch | `main` only |
+| Data | `demo-data/ledger.db` | its own `data/ledger.db` (real) |
+| URL | http://127.0.0.1:5002 | http://127.0.0.1:5001 + your tailnet |
+| Start | `.\scripts\windows\dev.ps1` | automatically at boot |
+
+**Install** (normal PowerShell, one UAC prompt for the Scheduled Task):
+
+```powershell
+# from your dev checkout; -ImportDataFrom moves an existing ledger across
+.\scripts\windows\install-server.ps1 -InstallDir H:\MyPULSE -ImportDataFrom .\data -DisableSleep
+```
+
+It clones `main` into `-InstallDir`, builds a virtualenv, copies the ledger
+with SQLite's backup API (integrity check + per-table row counts must match;
+the old folder is renamed, never deleted), applies migrations, and registers
+a **"PULSE Server"** Scheduled Task that starts at boot without a login and
+restarts on failure. The server ([`cli/serve.py`](cli/serve.py), waitress)
+binds to `127.0.0.1` only. Re-running it is safe; an existing ledger is
+never overwritten.
+
+**Deploy** after merging to `main`:
+
+```powershell
+.\scripts\windows\update-server.ps1 -InstallDir H:\MyPULSE
+```
+
+Backup, stop, fast-forward, install deps, migrate, start, health check. On any
+failure the server is left stopped and the script prints the rollback commands.
+
+**Phone and laptop access: Tailscale.** Install [Tailscale](https://tailscale.com/download)
+on the PC and each device and sign in to the same account; in the admin
+console enable MagicDNS and HTTPS certificates. The install script then runs
+
+```powershell
+tailscale serve --bg --https=443 http://127.0.0.1:5001
+```
+
+giving `https://<pc-name>.<tailnet>.ts.net`, reachable only from your own
+signed-in devices, end-to-end encrypted, and never exposed to the internet.
+Don't port-forward or bind PULSE to `0.0.0.0` instead: it has no login.
+
+Logs: `<InstallDir>\data\logs\server.log`. Remove: `Unregister-ScheduledTask "PULSE Server"`
+(admin) and `tailscale serve reset`.
+
 ## Architecture
 
 ```

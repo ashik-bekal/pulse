@@ -32,6 +32,9 @@ Thumbs.db
 .vscode/
 .claude/
 
+# Local demo ledger used by scripts/windows/dev.ps1 (+ its .secret_key)
+demo-data/
+
 # App-generated temp files
 uploads/
 tmp/

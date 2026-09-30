@@ -2,7 +2,8 @@ services:
   pulse:
     build: .
     ports:
-      - "5001:5001"
+      # Loopback only: PULSE has no login, so never publish it on all interfaces.
+      - "127.0.0.1:5001:5001"
     volumes:
       - ./data:/app/data
     environment:
