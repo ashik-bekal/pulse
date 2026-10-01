@@ -23,6 +23,7 @@ from contextlib import closing
 from datetime import datetime
 from typing import Optional
 
+from parsers import revolut
 from persistence.database import get_connection
 from persistence.repositories import ImportJobRepository
 
@@ -47,7 +48,7 @@ def detect_pdf(pdf_path: str) -> dict:
     Identify the statement type and period from the PDF.
 
     Returns a dict with:
-      account_type:  "hsbc" | "chase_bank" | "sapphire" | None
+      account_type:  "hsbc" | "chase_bank" | "sapphire" | "revolut" | None
       account_label: human-readable name
       year:          int | None
       start_month:   int | None
@@ -62,6 +63,7 @@ def detect_pdf(pdf_path: str) -> dict:
 
     return (
         _try_hsbc(text)
+        or _try_revolut(text)
         or _try_sapphire(text)
         or _try_chase_bank(text)
         or _unknown("Statement format not recognised — please select account type manually.")
@@ -131,6 +133,23 @@ def _try_hsbc(text: str) -> Optional[dict]:
         "confidence": "high" if date_match else "medium",
         "notes": "Detected HSBC UK statement." + (f" Period: {period_label}." if period_label else ""),
         "last4": last4,
+    }
+
+
+def _try_revolut(text: str) -> Optional[dict]:
+    """Adapt parser-owned detection to the web import API's existing shape."""
+    detection = revolut.detect(text)
+    if detection is None:
+        return None
+    return {
+        "account_type": detection.format_name,
+        "account_label": detection.account_label,
+        "year": detection.year,
+        "start_month": detection.start_month,
+        "period_label": detection.period_label,
+        "confidence": detection.confidence,
+        "notes": detection.notes,
+        "last4": detection.last4,
     }
 
 
@@ -263,7 +282,7 @@ def _run_job(job_id: str, temp_id: str, filename: str, account_type: str,
         except Exception:
             log.warning("Pre-import backup failed — continuing with import", exc_info=True)
 
-        from cli.ingest import ingest_hsbc, ingest_chase_bank, ingest_sapphire
+        from cli.ingest import ingest_hsbc, ingest_chase_bank, ingest_sapphire, ingest_revolut
 
         with closing(get_connection()) as conn:
             resolved_year  = year or datetime.now().year
@@ -275,6 +294,12 @@ def _run_job(job_id: str, temp_id: str, filename: str, account_type: str,
                 inserted_ids, skipped, reconciled, diff = ingest_chase_bank(conn, pdf_path, resolved_year, resolved_month, target_account_id=target_account_id)
             elif account_type == "sapphire":
                 inserted_ids, skipped, reconciled, diff = ingest_sapphire(conn, pdf_path, resolved_year, resolved_month, target_account_id=target_account_id)
+            elif account_type == "revolut":
+                if target_account_id is None:
+                    raise ValueError("Revolut imports require a target account")
+                inserted_ids, skipped, reconciled, diff = ingest_revolut(
+                    conn, pdf_path, target_account_id=target_account_id,
+                )
             else:
                 raise ValueError(f"Unknown account type: {account_type}")
             conn.commit()

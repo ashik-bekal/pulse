@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
+from parsers.base import SUPPORTED_STATEMENT_FORMATS
 from web.import_service import TEMP_DIR, detect_pdf, start_job, recover_on_startup
 
 from persistence.backup import create_backup
@@ -1021,7 +1022,7 @@ def api_import_queue():
     except (ValueError, AttributeError, TypeError):
         return jsonify({"ok": False, "error": "Invalid temp_id"}), 400
 
-    if account_type not in ("hsbc", "chase_bank", "sapphire"):
+    if account_type not in SUPPORTED_STATEMENT_FORMATS:
         return jsonify({"ok": False, "error": "Unknown account_type"}), 400
 
     tmp_path = os.path.join(TEMP_DIR, temp_id + ".pdf")
@@ -1062,6 +1063,9 @@ def add_account():
     display_name = f.get("display_name", "").strip()
     if not account_code or not display_name:
         return redirect(url_for("accounts_view"))
+    statement_format = f.get("statement_format") or None
+    if statement_format is not None and statement_format not in SUPPORTED_STATEMENT_FORMATS:
+        return redirect(url_for("accounts_view", msg="Unsupported statement format"))
     ob_str = f.get("opening_balance_native", "").strip()
     opening_balance = float(ob_str) if ob_str else None
     with closing(get_connection()) as conn:
@@ -1089,7 +1093,7 @@ def add_account():
             f.get("last4", "").strip(),
             f.get("currency", "USD").strip().upper(),
             owner_id,
-            statement_format=f.get("statement_format") or None,
+            statement_format=statement_format,
         )
         if opening_balance is not None:
             conn.execute(
